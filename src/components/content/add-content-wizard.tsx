@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, FileCode2, FileText, Globe, Link2, Search, XCircle } from "lucide-react";
+import { CheckCircle2, Globe, Link2, Search, XCircle } from "lucide-react";
 import { createContentAction, previewUrlAction } from "@/server/actions/content";
 import type { UrlPreview } from "@/server/services/content";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -14,25 +14,9 @@ import { TYPE_LABELS } from "./badges";
 import { DuplicateWarnings } from "./duplicate-warnings";
 import { Thumb } from "./thumb";
 
-const METHODS = [
-  {
-    value: "META_TAG",
-    icon: FileCode2,
-    title: "Meta tag",
-    body: "Add a <meta> tag to the page's <head>. Best for pages whose HTML you control.",
-  },
-  {
-    value: "FILE",
-    icon: FileText,
-    title: "Verification file",
-    body: "Upload a small .txt file to your site's root. Proves control of the whole domain.",
-  },
-] as const;
-
 export function AddContentWizard() {
   const { state: preview, onSubmit: analyze, pending: analyzing } = useFormAction<UrlPreview>(previewUrlAction);
   const { state: created, onSubmit: create, pending: creating } = useFormAction(createContentAction);
-  const [method, setMethod] = useState<"META_TAG" | "FILE">("META_TAG");
   const [type, setType] = useState("BLOG");
   const data = preview.ok ? preview.data : undefined;
 
@@ -71,12 +55,12 @@ export function AddContentWizard() {
 
       {data && (
         <Card>
-          <CardHeader title="2. Review & choose verification" description="We checked the page and your library for duplicates." />
+          <CardHeader title="2. Review" description="We checked the page and your library for duplicates." />
           <form onSubmit={create}>
             <input type="hidden" name="url" value={data.url} />
             <input type="hidden" name="type" value={type} />
             <input type="hidden" name="title" value={data.title ?? ""} />
-            <input type="hidden" name="method" value={method} />
+            <input type="hidden" name="method" value="META_TAG" />
             <input type="hidden" name="hasWarnings" value={String(data.warnings.length > 0)} />
             <CardContent className="space-y-5">
               {!created.ok && <FormAlert message={created.error} />}
@@ -112,28 +96,6 @@ export function AddContentWizard() {
                   I understand — add it anyway.
                 </label>
               )}
-
-              <fieldset className="space-y-2">
-                <legend className="mb-2 text-[13px] font-medium">Ownership verification method</legend>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {METHODS.map((m) => (
-                    <label
-                      key={m.value}
-                      className={cn(
-                        "flex cursor-pointer gap-3 rounded-lg border p-3.5 transition-colors",
-                        method === m.value ? "border-primary bg-accent/60 ring-1 ring-primary" : "hover:bg-surface-2",
-                      )}
-                    >
-                      <input type="radio" name="methodChoice" value={m.value} checked={method === m.value} onChange={() => setMethod(m.value)} className="sr-only" />
-                      <m.icon className={cn("mt-0.5 size-4 shrink-0", method === m.value ? "text-primary" : "text-muted-foreground")} />
-                      <span>
-                        <span className="block text-sm font-medium">{m.title}</span>
-                        <span className="block text-[13px] text-muted-foreground">{m.body}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
 
               <Field id="tags" label="Tags" hint="Comma separated. Tags found on the page are merged in after extraction.">
                 <Input id="tags" name="tags" defaultValue={data.suggestedTags.join(", ")} key={data.url} placeholder="nextjs, typescript" />
