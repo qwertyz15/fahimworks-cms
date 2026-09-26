@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- remote images from arbitrary hosts */
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowRight, PlusCircle } from "lucide-react";
+import { ArrowRight, ArrowUpRight, PlusCircle } from "lucide-react";
 import type { ContentType } from "@/generated/prisma/enums";
 import { StatusBadge } from "@/components/content/badges";
 import { buttonVariants } from "@/components/ui/button";
@@ -23,13 +23,29 @@ function TypeIconTile({ type, className }: { type: ContentType; className?: stri
   );
 }
 
+/** ↗ button that opens the original page in a new tab (sits above the card's own link). */
+function OpenOriginal({ url, className }: { url: string; className?: string }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Open original page on ${displayHost(url)} in a new tab`}
+      title={`Open ${displayHost(url)}`}
+      className={cn(
+        "relative z-10 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+        className,
+      )}
+    >
+      <ArrowUpRight className="size-4" />
+    </a>
+  );
+}
+
 function GridCard({ item }: { item: LibraryItem }) {
   const meta = TYPE_META[item.type];
   return (
-    <Link
-      href={`/dashboard/content/${item.id}`}
-      className="group flex flex-col overflow-hidden rounded-xl border bg-surface shadow-card transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-pop focus-visible:border-primary"
-    >
+    <div className="group relative flex flex-col overflow-hidden rounded-xl border bg-surface shadow-card transition focus-within:border-primary hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-pop">
       <div className="relative aspect-[16/9] overflow-hidden border-b bg-muted">
         {item.thumbnail ? (
           <img src={item.thumbnail} alt="" loading="lazy" referrerPolicy="no-referrer" className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
@@ -39,56 +55,71 @@ function GridCard({ item }: { item: LibraryItem }) {
         <span className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-[11px] font-medium shadow-sm backdrop-blur">
           <meta.icon className="size-3" /> {meta.label}
         </span>
+        <OpenOriginal url={item.url} className="absolute top-2 right-2 bg-background/90 text-foreground shadow-sm backdrop-blur hover:bg-background" />
       </div>
       <div className="flex flex-1 flex-col gap-2 p-3.5">
-        <p className="line-clamp-2 text-sm leading-snug font-medium group-hover:text-primary">{item.title}</p>
+        {/* Stretched link: the whole card opens the item; the ↗ button stays clickable above it. */}
+        <Link
+          href={`/dashboard/content/${item.id}`}
+          className="line-clamp-2 text-sm leading-snug font-medium outline-none after:absolute after:inset-0 after:content-[''] group-hover:text-primary"
+        >
+          {item.title}
+        </Link>
         {item.description && <p className="line-clamp-2 text-xs text-muted-foreground">{item.description}</p>}
         <div className="mt-auto flex items-center justify-between gap-2 pt-1">
           <StatusBadge status={item.status} />
           <span className="truncate text-[11px] text-muted-foreground">{formatDate(item.publishDate ?? item.updatedAt)}</span>
         </div>
       </div>
-    </Link>
+    </div>
   );
 }
+
+const LIST_COLS = "md:grid-cols-[minmax(0,1fr)_7rem_11rem_9rem_7rem_2rem]";
 
 function ListRows({ items }: { items: LibraryItem[] }) {
   return (
     <div className="overflow-hidden rounded-xl border bg-surface shadow-card">
-      <div className="hidden grid-cols-[minmax(0,1fr)_7rem_11rem_9rem_7rem] gap-4 border-b bg-surface-2/60 px-4 py-2 text-xs font-medium text-muted-foreground md:grid">
+      <div className={cn("hidden gap-4 border-b bg-surface-2/60 px-4 py-2 text-xs font-medium text-muted-foreground md:grid", LIST_COLS)}>
         <span>Name</span>
         <span>Type</span>
         <span>Status</span>
         <span>Site</span>
         <span className="text-right">Modified</span>
+        <span className="sr-only">Open original</span>
       </div>
       <ul className="divide-y">
         {items.map((item) => {
           const meta = TYPE_META[item.type];
           return (
-            <li key={item.id}>
-              <Link
-                href={`/dashboard/content/${item.id}`}
-                className="group grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-4 py-2.5 hover:bg-surface-2/60 md:grid-cols-[minmax(0,1fr)_7rem_11rem_9rem_7rem] md:gap-4"
-              >
-                <span className="flex min-w-0 items-center gap-3 max-md:contents">
-                  <TypeIconTile type={item.type} className="size-8 shrink-0" />
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium group-hover:text-primary">{item.title}</span>
-                    <span className="block truncate text-xs text-muted-foreground md:hidden">
-                      {meta.label} · {displayHost(item.url)} · {formatDate(item.updatedAt)}
-                    </span>
+            <li
+              key={item.id}
+              className={cn("group relative grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 focus-within:bg-surface-2/60 hover:bg-surface-2/60 md:gap-4", LIST_COLS)}
+            >
+              <span className="flex min-w-0 items-center gap-3 max-md:contents">
+                <TypeIconTile type={item.type} className="size-8 shrink-0" />
+                <span className="min-w-0">
+                  {/* Stretched link: the whole row opens the item. */}
+                  <Link
+                    href={`/dashboard/content/${item.id}`}
+                    className="block truncate text-sm font-medium outline-none after:absolute after:inset-0 after:content-[''] group-hover:text-primary"
+                  >
+                    {item.title}
+                  </Link>
+                  <span className="block truncate text-xs text-muted-foreground md:hidden">
+                    {meta.label} · {displayHost(item.url)} · {formatDate(item.updatedAt)}
                   </span>
                 </span>
-                <span className="hidden items-center gap-1.5 text-[13px] text-muted-foreground md:flex">
-                  <meta.icon className="size-3.5" /> {meta.label}
-                </span>
-                <span className="hidden md:block">
-                  <StatusBadge status={item.status} />
-                </span>
-                <span className="hidden truncate text-[13px] text-muted-foreground md:block">{item.siteName ?? displayHost(item.url)}</span>
-                <span className="hidden text-right text-[13px] whitespace-nowrap text-muted-foreground md:block">{formatDate(item.updatedAt)}</span>
-              </Link>
+              </span>
+              <span className="hidden items-center gap-1.5 text-[13px] text-muted-foreground md:flex">
+                <meta.icon className="size-3.5" /> {meta.label}
+              </span>
+              <span className="hidden md:block">
+                <StatusBadge status={item.status} />
+              </span>
+              <span className="hidden truncate text-[13px] text-muted-foreground md:block">{item.siteName ?? displayHost(item.url)}</span>
+              <span className="hidden text-right text-[13px] whitespace-nowrap text-muted-foreground md:block">{formatDate(item.updatedAt)}</span>
+              <OpenOriginal url={item.url} className="justify-self-end" />
             </li>
           );
         })}
