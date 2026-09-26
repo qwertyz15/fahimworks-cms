@@ -3,11 +3,11 @@ import sanitizeHtml from "sanitize-html";
 import type { Readability as ReadabilityType } from "@mozilla/readability";
 import { absoluteUrl } from "@/lib/url";
 
-// jsdom and Readability are heavy and only needed during extraction, so they are
-// loaded on first use instead of at module load (keeps login/register cold
-// starts fast and isolated from parser dependencies).
-let domLibs: Promise<[typeof import("jsdom"), typeof import("@mozilla/readability")]> | undefined;
-const loadDomLibs = () => (domLibs ??= Promise.all([import("jsdom"), import("@mozilla/readability")]));
+// linkedom (a light, script-free DOM) and Readability are only needed during
+// extraction, so they are loaded on first use rather than at module load. This
+// keeps login/register cold starts fast and isolated from parser dependencies.
+let domLibs: Promise<[typeof import("linkedom"), typeof import("@mozilla/readability")]> | undefined;
+const loadDomLibs = () => (domLibs ??= Promise.all([import("linkedom"), import("@mozilla/readability")]));
 
 /**
  * Pure HTML → structured document extraction. No network, no database.
@@ -190,17 +190,18 @@ export async function extractDocument(html: string, pageUrl: string): Promise<Ex
   const canonicalUrl = absoluteUrl($('link[rel="canonical"]').attr("href"), pageUrl) ?? null;
   const language = text($("html").attr("lang"))?.slice(0, 16) ?? meta("og:locale")?.slice(0, 16) ?? null;
 
-  // ── Main content via Readability on a script-less jsdom document ──
-  const [{ JSDOM, VirtualConsole }, { Readability }] = await loadDomLibs();
-  const virtualConsole = new VirtualConsole();
-  const dom = new JSDOM(html, { url: pageUrl, virtualConsole });
+  // ── Main content via Readability on a linkedom document (never executes scripts) ──
+  const [{ parseHTML }, { Readability }] = await loadDomLibs();
   let readable: ReturnType<ReadabilityType<string>["parse"]> = null;
   try {
-    readable = new Readability(dom.window.document, { charThreshold: 300, keepClasses: false }).parse();
+    const { document } = parseHTML(html);
+    // linkedom has no document URL; a <base> lets Readability resolve relative links.
+    const base = document.createElement("base");
+    base.setAttribute("href", pageUrl);
+    document.head?.prepend(base);
+    readable = new Readability(document as unknown as Document, { charThreshold: 300, keepClasses: false }).parse();
   } catch {
     readable = null;
-  } finally {
-    dom.window.close();
   }
 
   const rawContentHtml = readable?.content ?? "";

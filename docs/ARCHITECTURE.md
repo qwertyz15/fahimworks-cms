@@ -93,8 +93,8 @@ only via `ALLOW_PRIVATE_NETWORK_FETCH=true` for local development.
    `<meta name=author|description|keywords>`, `<link rel=canonical>`,
    `<html lang>`, and JSON-LD (`Article`, `BlogPosting`, `TechArticle`,
    `ScholarlyArticle`, `HowTo`, incl. `@graph`).
-3. **Main content**: Mozilla Readability on a jsdom document (scripts
-   disabled, no resource loading).
+3. **Main content**: Mozilla Readability on a linkedom document
+   (never executes scripts, loads no resources; loaded lazily).
 4. **Sanitise**: `sanitize-html` allowlist → stored `contentHtml`; plain text
    → `contentText`, `wordCount`, `readingMinutes`.
 5. **Summary**: first meaningful sentences up to ~320 chars (pluggable:

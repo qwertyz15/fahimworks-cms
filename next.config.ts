@@ -20,8 +20,6 @@ const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
   reactStrictMode: true,
-  // jsdom relies on runtime file access; keep it out of the server bundle.
-  serverExternalPackages: ["jsdom"],
   experimental: {
     serverActions: {
       bodySizeLimit: "1mb",
