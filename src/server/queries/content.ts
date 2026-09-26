@@ -7,7 +7,7 @@ import { requireAdmin } from "@/server/auth/guards";
 
 export async function getDashboardStats() {
   await requireAdmin();
-  const [byType, byTypeStatus, byStatus, verified, recent, activity] = await Promise.all([
+  const [byType, byTypeStatus, byStatus, verified, recent, activity, pending] = await Promise.all([
     db.content.groupBy({ by: ["type"], _count: { _all: true } }),
     db.content.groupBy({ by: ["type", "status"], _count: { _all: true } }),
     db.content.groupBy({ by: ["status"], _count: { _all: true } }),
@@ -23,17 +23,16 @@ export async function getDashboardStats() {
       take: 8,
       select: { id: true, action: true, targetId: true, targetType: true, createdAt: true, metadata: true },
     }),
+    db.content.findMany({
+      where: { status: "AWAITING_APPROVAL" },
+      orderBy: { updatedAt: "asc" },
+      take: 5,
+      select: { id: true, title: true, url: true, type: true, updatedAt: true, duplicateWarnings: true },
+    }),
   ]);
   const typeCount = (t: ContentType) => byType.find((r) => r.type === t)?._count._all ?? 0;
   const statusCount = (s: ContentStatus) => byStatus.find((r) => r.status === s)?._count._all ?? 0;
   const total = byType.reduce((sum, r) => sum + r._count._all, 0);
-
-  const pending = await db.content.findMany({
-    where: { status: "AWAITING_APPROVAL" },
-    orderBy: { updatedAt: "asc" },
-    take: 5,
-    select: { id: true, title: true, url: true, type: true, updatedAt: true, duplicateWarnings: true },
-  });
 
   const perType = Object.fromEntries(
     CONTENT_TYPES.map((t) => [
@@ -63,7 +62,8 @@ export async function getDashboardStats() {
   };
 }
 
-export const LIBRARY_LIMIT = 60;
+/** Personal libraries are small; load them whole so type tabs filter instantly in the browser. */
+export const LIBRARY_LIMIT = 300;
 
 /** Items for the dashboard library (grid / list), optionally filtered by type. */
 export async function listLibrary(type?: ContentType) {

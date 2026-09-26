@@ -1,7 +1,7 @@
 import "server-only";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { db } from "@/lib/db";
 import type { Role } from "@/generated/prisma/enums";
 
 export class AuthorizationError extends Error {
@@ -13,15 +13,22 @@ export class AuthorizationError extends Error {
 
 export type SessionUser = { id: string; name: string; email: string; role: Role };
 
-/** Current user loaded from the database, or null. */
-export async function currentUser(): Promise<SessionUser | null> {
+/**
+ * Current user, or null. auth() runs the jwt callback, which re-validates the
+ * user and session version against the database on every call and refreshes
+ * name/email/role — so the session is authoritative. cache() makes the layout,
+ * page and queries of one request share a single lookup.
+ */
+export const currentUser = cache(async (): Promise<SessionUser | null> => {
   const session = await auth();
   if (!session?.user?.id) return null;
-  return db.user.findUnique({
-    where: { id: session.user.id },
-    select: { id: true, name: true, email: true, role: true },
-  });
-}
+  return {
+    id: session.user.id,
+    name: session.user.name ?? "",
+    email: session.user.email ?? "",
+    role: session.user.role,
+  };
+});
 
 /**
  * Guard for pages and server actions. Every privileged entry point calls this

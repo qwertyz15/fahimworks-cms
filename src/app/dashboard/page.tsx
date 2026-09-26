@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { AlertTriangle, ArrowRight, CheckCircle2, Clock, PlusCircle, ShieldCheck, XCircle } from "lucide-react";
-import { TYPE_META, TYPE_ORDER, VIEW_COOKIE, parseType } from "@/components/dashboard/content-types";
+import { VIEW_COOKIE, parseType } from "@/components/dashboard/content-types";
 import { Library } from "@/components/dashboard/library";
 import { TypeBadge } from "@/components/content/badges";
 import { buttonVariants } from "@/components/ui/button";
@@ -37,7 +37,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const sp = await searchParams;
   const active = parseType(sp.type);
   const view = (await cookies()).get(VIEW_COOKIE)?.value === "list" ? "list" : "grid";
-  const [stats, library] = await Promise.all([getDashboardStats(), listLibrary(active)]);
+  const [stats, library] = await Promise.all([getDashboardStats(), listLibrary()]);
 
   const statusStrip = [
     { label: "Published", value: stats.published, icon: CheckCircle2, href: "/dashboard/content?status=PUBLISHED", tone: "text-success" },
@@ -57,36 +57,6 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           </Link>
         }
       />
-
-      {/* One card per content type — each doubles as a filter for the library below. */}
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Content by type">
-        {TYPE_ORDER.map((type) => {
-          const meta = TYPE_META[type];
-          const { total, published } = stats.perType[type];
-          const selected = active === type;
-          return (
-            <Link
-              key={type}
-              href={selected ? "/dashboard#library" : `/dashboard?type=${type}#library`}
-              scroll={false}
-              aria-current={selected ? "true" : undefined}
-              className={cn(
-                "group rounded-xl border bg-surface p-4 shadow-card transition-colors hover:border-primary/40",
-                selected && "border-primary ring-1 ring-primary",
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[13px] font-medium text-muted-foreground group-hover:text-foreground">{meta.plural}</span>
-                <span className={cn("flex size-8 items-center justify-center rounded-lg", meta.tile)}>
-                  <meta.icon className="size-4" />
-                </span>
-              </div>
-              <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{total}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{published} published</p>
-            </Link>
-          );
-        })}
-      </section>
 
       <Card className="grid grid-cols-2 divide-border max-lg:[&>*:nth-child(-n+2)]:border-b lg:grid-cols-4 lg:divide-x">
         {statusStrip.map((s) => (
@@ -135,13 +105,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         </Card>
       )}
 
-      <Library
-        items={library.items}
-        total={library.total}
-        active={active}
-        view={view}
-        counts={{ all: stats.total, ...Object.fromEntries(TYPE_ORDER.map((t) => [t, stats.perType[t].total])) } as Parameters<typeof Library>[0]["counts"]}
-      />
+      <Library items={library.items} total={library.total} perType={stats.perType} initialType={active} initialView={view} />
 
       <Card>
         <CardHeader title="Recent activity" />

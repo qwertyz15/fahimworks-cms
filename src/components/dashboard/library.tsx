@@ -1,5 +1,8 @@
+"use client";
+
 /* eslint-disable @next/next/no-img-element -- remote images from arbitrary hosts */
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { ArrowRight, PlusCircle } from "lucide-react";
 import type { ContentType } from "@/generated/prisma/enums";
 import { StatusBadge } from "@/components/content/badges";
@@ -9,11 +12,7 @@ import { EmptyState } from "@/components/ui/misc";
 import { cn, displayHost, formatDate } from "@/lib/utils";
 import type { LibraryItem } from "@/server/queries/content";
 import { TYPE_META, TYPE_ORDER, type LibraryView } from "./content-types";
-import { ViewToggle } from "./view-toggle";
-
-function typeHref(type?: ContentType) {
-  return type ? `/dashboard?type=${type}#library` : "/dashboard#library";
-}
+import { ViewToggle, persistView } from "./view-toggle";
 
 function TypeIconTile({ type, className }: { type: ContentType; className?: string }) {
   const meta = TYPE_META[type];
@@ -98,91 +97,154 @@ function ListRows({ items }: { items: LibraryItem[] }) {
   );
 }
 
+/** Keep the address bar in sync (shareable/filter-able) without a server round trip. */
+function syncUrl(type?: ContentType) {
+  const url = new URL(window.location.href);
+  if (type) url.searchParams.set("type", type);
+  else url.searchParams.delete("type");
+  window.history.replaceState(window.history.state, "", url);
+}
+
+export interface TypeStats {
+  total: number;
+  published: number;
+}
+
+/**
+ * Type cards + filter tabs + grid/list library. The whole (personal-sized)
+ * library is loaded once; filtering and layout switching happen instantly in
+ * the browser.
+ */
 export function Library({
   items,
   total,
-  counts,
-  active,
-  view,
+  perType,
+  initialType,
+  initialView,
 }: {
   items: LibraryItem[];
   total: number;
-  counts: Record<ContentType, number> & { all: number };
-  active?: ContentType;
-  view: LibraryView;
+  perType: Record<ContentType, TypeStats>;
+  initialType?: ContentType;
+  initialView: LibraryView;
 }) {
+  const [active, setActive] = useState<ContentType | undefined>(initialType);
+  const [view, setView] = useState<LibraryView>(initialView);
+  const visible = useMemo(() => (active ? items.filter((i) => i.type === active) : items), [items, active]);
+
+  const select = (type?: ContentType) => {
+    setActive(type);
+    syncUrl(type);
+  };
+  const changeView = (next: LibraryView) => {
+    setView(next);
+    persistView(next);
+  };
+
   const tabs: { key?: ContentType; label: string; count: number }[] = [
-    { label: "All", count: counts.all },
-    ...TYPE_ORDER.map((t) => ({ key: t, label: TYPE_META[t].plural, count: counts[t] })),
+    { label: "All", count: total },
+    ...TYPE_ORDER.map((t) => ({ key: t, label: TYPE_META[t].plural, count: perType[t].total })),
   ];
   const activeMeta = active ? TYPE_META[active] : undefined;
 
   return (
-    <section id="library" className="scroll-mt-6 space-y-4" aria-label="Content library">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <nav className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 sm:pb-0" aria-label="Filter by type">
-          {tabs.map((tab) => {
-            const selected = tab.key === active;
-            return (
-              <Link
-                key={tab.label}
-                href={typeHref(tab.key)}
-                scroll={false}
-                aria-current={selected ? "page" : undefined}
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors",
-                  selected ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {tab.label}
-                <span className={cn("rounded-full px-1.5 text-[11px] tabular-nums", selected ? "bg-background/20" : "bg-muted")}>{tab.count}</span>
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="flex items-center gap-2">
-          <Link href="/dashboard/content" className={buttonVariants({ variant: "ghost", size: "sm" })}>
-            Manage <ArrowRight />
-          </Link>
-          <ViewToggle view={view} />
-        </div>
-      </div>
+    <>
+      {/* One card per content type — each doubles as a filter for the library below. */}
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Content by type">
+        {TYPE_ORDER.map((type) => {
+          const meta = TYPE_META[type];
+          const selected = active === type;
+          return (
+            <button
+              key={type}
+              type="button"
+              onClick={() => select(selected ? undefined : type)}
+              aria-pressed={selected}
+              className={cn(
+                "group rounded-xl border bg-surface p-4 text-left shadow-card transition-colors hover:border-primary/40",
+                selected && "border-primary ring-1 ring-primary",
+              )}
+            >
+              <span className="flex items-center justify-between">
+                <span className="text-[13px] font-medium text-muted-foreground group-hover:text-foreground">{meta.plural}</span>
+                <span className={cn("flex size-8 items-center justify-center rounded-lg", meta.tile)}>
+                  <meta.icon className="size-4" />
+                </span>
+              </span>
+              <span className="mt-2 block text-2xl font-semibold tracking-tight tabular-nums">{perType[type].total}</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">{perType[type].published} published</span>
+            </button>
+          );
+        })}
+      </section>
 
-      {items.length === 0 ? (
-        <Card>
-          <EmptyState
-            icon={activeMeta ? <activeMeta.icon /> : <PlusCircle />}
-            title={activeMeta ? `No ${activeMeta.plural.toLowerCase()} yet` : "No content yet"}
-            description={
-              activeMeta
-                ? `Add a ${activeMeta.label.toLowerCase()} URL and choose "${activeMeta.label}" as its type.`
-                : "Add the URL of something you wrote. You'll verify you own it, then publish it to your portfolio."
-            }
-            action={
-              <Link href="/dashboard/add" className={buttonVariants({ size: "sm" })}>
-                <PlusCircle /> Add {activeMeta ? `a ${activeMeta.label.toLowerCase()}` : "content"}
-              </Link>
-            }
-          />
-        </Card>
-      ) : view === "grid" ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {items.map((item) => (
-            <GridCard key={item.id} item={item} />
-          ))}
+      <section id="library" className="scroll-mt-6 space-y-4" aria-label="Content library">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div role="tablist" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 sm:pb-0" aria-label="Filter by type">
+            {tabs.map((tab) => {
+              const selected = tab.key === active;
+              return (
+                <button
+                  key={tab.label}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => select(tab.key)}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors",
+                    selected ? "bg-foreground text-background" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  {tab.label}
+                  <span className={cn("rounded-full px-1.5 text-[11px] tabular-nums", selected ? "bg-background/20" : "bg-muted")}>{tab.count}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href="/dashboard/content" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+              Manage <ArrowRight />
+            </Link>
+            <ViewToggle view={view} onChange={changeView} />
+          </div>
         </div>
-      ) : (
-        <ListRows items={items} />
-      )}
 
-      {total > items.length && (
-        <p className="text-center text-[13px] text-muted-foreground">
-          Showing the {items.length} most recently updated of {total}.{" "}
-          <Link href={`/dashboard/content${active ? `?type=${active}` : ""}`} className="font-medium text-primary hover:underline">
-            See all
-          </Link>
-        </p>
-      )}
-    </section>
+        {visible.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={activeMeta ? <activeMeta.icon /> : <PlusCircle />}
+              title={activeMeta ? `No ${activeMeta.plural.toLowerCase()} yet` : "No content yet"}
+              description={
+                activeMeta
+                  ? `Add a ${activeMeta.label.toLowerCase()} URL and choose "${activeMeta.label}" as its type.`
+                  : "Add the URL of something you wrote. You'll verify you own it, then publish it to your portfolio."
+              }
+              action={
+                <Link href="/dashboard/add" className={buttonVariants({ size: "sm" })}>
+                  <PlusCircle /> Add {activeMeta ? `a ${activeMeta.label.toLowerCase()}` : "content"}
+                </Link>
+              }
+            />
+          </Card>
+        ) : view === "grid" ? (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {visible.map((item) => (
+              <GridCard key={item.id} item={item} />
+            ))}
+          </div>
+        ) : (
+          <ListRows items={visible} />
+        )}
+
+        {total > items.length && (
+          <p className="text-center text-[13px] text-muted-foreground">
+            Showing the {items.length} most recently updated of {total}.{" "}
+            <Link href={`/dashboard/content${active ? `?type=${active}` : ""}`} className="font-medium text-primary hover:underline">
+              See all
+            </Link>
+          </p>
+        )}
+      </section>
+    </>
   );
 }
