@@ -7,8 +7,9 @@ import { requireAdmin } from "@/server/auth/guards";
 
 export async function getDashboardStats() {
   await requireAdmin();
-  const [byType, byStatus, verified, recent, activity] = await Promise.all([
+  const [byType, byTypeStatus, byStatus, verified, recent, activity] = await Promise.all([
     db.content.groupBy({ by: ["type"], _count: { _all: true } }),
+    db.content.groupBy({ by: ["type", "status"], _count: { _all: true } }),
     db.content.groupBy({ by: ["status"], _count: { _all: true } }),
     db.content.count({ where: { verificationStatus: "VERIFIED" } }),
     db.content.findMany({
@@ -34,8 +35,19 @@ export async function getDashboardStats() {
     select: { id: true, title: true, url: true, type: true, updatedAt: true, duplicateWarnings: true },
   });
 
+  const perType = Object.fromEntries(
+    CONTENT_TYPES.map((t) => [
+      t,
+      {
+        total: typeCount(t),
+        published: byTypeStatus.find((r) => r.type === t && r.status === "PUBLISHED")?._count._all ?? 0,
+      },
+    ]),
+  ) as Record<ContentType, { total: number; published: number }>;
+
   return {
     total,
+    perType,
     blogs: typeCount("BLOG"),
     tutorials: typeCount("TUTORIAL"),
     articles: typeCount("ARTICLE"),
@@ -50,6 +62,39 @@ export async function getDashboardStats() {
     activity,
   };
 }
+
+export const LIBRARY_LIMIT = 60;
+
+/** Items for the dashboard library (grid / list), optionally filtered by type. */
+export async function listLibrary(type?: ContentType) {
+  await requireAdmin();
+  const where: Prisma.ContentWhereInput = type ? { type } : {};
+  const [items, total] = await Promise.all([
+    db.content.findMany({
+      where,
+      orderBy: { updatedAt: "desc" },
+      take: LIBRARY_LIMIT,
+      select: {
+        id: true,
+        title: true,
+        url: true,
+        type: true,
+        status: true,
+        thumbnail: true,
+        description: true,
+        siteName: true,
+        publishDate: true,
+        updatedAt: true,
+        wordCount: true,
+        readingMinutes: true,
+      },
+    }),
+    db.content.count({ where }),
+  ]);
+  return { items, total };
+}
+
+export type LibraryItem = Awaited<ReturnType<typeof listLibrary>>["items"][number];
 
 export const SORTS = {
   newest: { createdAt: "desc" },
