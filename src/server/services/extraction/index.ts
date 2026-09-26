@@ -31,7 +31,7 @@ export async function fetchAndExtract(url: string): Promise<FetchedDocument> {
       }
     },
   });
-  return { doc: extractDocument(res.body, res.finalUrl.href), finalUrl: res.finalUrl.href };
+  return { doc: await extractDocument(res.body, res.finalUrl.href), finalUrl: res.finalUrl.href };
 }
 
 export function minWordsFor(type: ContentType, minWordCount: number) {

@@ -1,8 +1,13 @@
 import * as cheerio from "cheerio";
-import { JSDOM, VirtualConsole } from "jsdom";
-import { Readability } from "@mozilla/readability";
 import sanitizeHtml from "sanitize-html";
+import type { Readability as ReadabilityType } from "@mozilla/readability";
 import { absoluteUrl } from "@/lib/url";
+
+// jsdom and Readability are heavy and only needed during extraction, so they are
+// loaded on first use instead of at module load (keeps login/register cold
+// starts fast and isolated from parser dependencies).
+let domLibs: Promise<[typeof import("jsdom"), typeof import("@mozilla/readability")]> | undefined;
+const loadDomLibs = () => (domLibs ??= Promise.all([import("jsdom"), import("@mozilla/readability")]));
 
 /**
  * Pure HTML → structured document extraction. No network, no database.
@@ -160,7 +165,7 @@ export function countWords(value: string): number {
   return matches ? matches.length : 0;
 }
 
-export function extractDocument(html: string, pageUrl: string): ExtractedDocument {
+export async function extractDocument(html: string, pageUrl: string): Promise<ExtractedDocument> {
   const $ = cheerio.load(html);
   const meta = (...keys: string[]): string | null => {
     for (const key of keys) {
@@ -186,9 +191,10 @@ export function extractDocument(html: string, pageUrl: string): ExtractedDocumen
   const language = text($("html").attr("lang"))?.slice(0, 16) ?? meta("og:locale")?.slice(0, 16) ?? null;
 
   // ── Main content via Readability on a script-less jsdom document ──
+  const [{ JSDOM, VirtualConsole }, { Readability }] = await loadDomLibs();
   const virtualConsole = new VirtualConsole();
   const dom = new JSDOM(html, { url: pageUrl, virtualConsole });
-  let readable: ReturnType<Readability["parse"]> = null;
+  let readable: ReturnType<ReadabilityType<string>["parse"]> = null;
   try {
     readable = new Readability(dom.window.document, { charThreshold: 300, keepClasses: false }).parse();
   } catch {

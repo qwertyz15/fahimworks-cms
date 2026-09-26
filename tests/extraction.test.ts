@@ -32,8 +32,8 @@ const ARTICLE = `<!doctype html>
 </body>
 </html>`;
 
-describe("extractDocument", () => {
-  const doc = extractDocument(ARTICLE, "https://blog.example.com/cms");
+describe("extractDocument", async () => {
+  const doc = await extractDocument(ARTICLE, "https://blog.example.com/cms");
 
   it("extracts metadata with the right precedence", () => {
     expect(doc.title).toBe("Building a CMS with Next.js");
@@ -65,14 +65,14 @@ describe("extractDocument", () => {
     expect(checkMeaningful(doc, 150)).toEqual({ ok: true });
   });
 
-  it("rejects thin pages", () => {
-    const thin = extractDocument("<html><head><title>Hi</title></head><body><p>Coming soon.</p></body></html>", "https://example.com/");
+  it("rejects thin pages", async () => {
+    const thin = await extractDocument("<html><head><title>Hi</title></head><body><p>Coming soon.</p></body></html>", "https://example.com/");
     expect(checkMeaningful(thin, 150).ok).toBe(false);
   });
 
-  it("rejects link-list index pages", () => {
+  it("rejects link-list index pages", async () => {
     const links = Array.from({ length: 80 }, (_, i) => `<li><a href="/p/${i}">Post number ${i} about something interesting</a></li>`).join("");
-    const index = extractDocument(`<html><head><title>Archive</title></head><body><article><h1>Archive</h1><ul>${links}</ul></article></body></html>`, "https://example.com/archive");
+    const index = await extractDocument(`<html><head><title>Archive</title></head><body><article><h1>Archive</h1><ul>${links}</ul></article></body></html>`, "https://example.com/archive");
     const res = checkMeaningful(index, 150);
     expect(res.ok).toBe(false);
   });

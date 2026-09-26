@@ -3,6 +3,8 @@ node_modules
 src/generated
 .git
 .env
+.prod.env
+.env.production
 .env*.local
 coverage
 docs

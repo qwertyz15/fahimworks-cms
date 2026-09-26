@@ -6,7 +6,7 @@
 #   migrator → runs `prisma migrate deploy` (one-shot, used by docker-compose)
 #   runner   → minimal runtime image (default target)
 # ─────────────────────────────────────────────────────────────────────────────
-ARG NODE_VERSION=22
+ARG NODE_VERSION=24
 
 FROM node:${NODE_VERSION}-alpine AS base
 RUN apk add --no-cache libc6-compat
