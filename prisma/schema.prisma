@@ -1,0 +1,211 @@
+// Portfolio CMS — database schema.
+// See docs/ARCHITECTURE.md §7 for the rationale behind each model.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum Role {
+  ADMIN
+  EDITOR
+}
+
+enum ContentType {
+  BLOG
+  TUTORIAL
+  ARTICLE
+  PROJECT
+}
+
+/// Workflow stage. Source of truth; see services/workflow.ts.
+enum ContentStatus {
+  DRAFT
+  VERIFICATION_PENDING
+  VERIFIED
+  AWAITING_APPROVAL
+  PUBLISHED
+  REJECTED
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+enum ApprovalStatus {
+  NOT_SUBMITTED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum VerificationMethod {
+  META_TAG
+  FILE
+}
+
+enum ExtractionStatus {
+  NOT_STARTED
+  SUCCEEDED
+  FAILED
+}
+
+// ───────────────────────────── Auth ─────────────────────────────
+
+model User {
+  id             String    @id @default(cuid())
+  name           String
+  email          String    @unique
+  passwordHash   String    @map("password_hash")
+  role           Role      @default(EDITOR)
+  /// Incremented to revoke every existing session (password change, sign out everywhere).
+  sessionVersion Int       @default(0) @map("session_version")
+  lastLoginAt    DateTime? @map("last_login_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  contents  Content[]
+  auditLogs AuditLog[]
+
+  @@map("users")
+}
+
+// ─────────────────────────── Content ───────────────────────────
+
+model Content {
+  id            String      @id @default(cuid())
+  /// Stable public identifier used by the portfolio.
+  slug          String      @unique
+  title         String
+  url           String
+  /// Canonical form used for duplicate detection (lib/url.ts).
+  normalizedUrl String      @unique @map("normalized_url")
+  type          ContentType
+  description   String?
+  thumbnail     String?
+  /// Author name as extracted from the page (or entered manually).
+  author        String?
+  /// Original publication date of the article on its source site.
+  publishDate   DateTime?   @map("publish_date")
+  featured      Boolean     @default(false)
+
+  // Workflow
+  status             ContentStatus      @default(DRAFT)
+  verificationStatus VerificationStatus @default(UNVERIFIED) @map("verification_status")
+  approvalStatus     ApprovalStatus     @default(NOT_SUBMITTED) @map("approval_status")
+  verifiedAt         DateTime?          @map("verified_at")
+  approvedAt         DateTime?          @map("approved_at")
+  publishedAt        DateTime?          @map("published_at")
+  rejectedAt         DateTime?          @map("rejected_at")
+  rejectionReason    String?            @map("rejection_reason")
+
+  // Extraction
+  extractionStatus ExtractionStatus @default(NOT_STARTED) @map("extraction_status")
+  extractionError  String?          @map("extraction_error")
+  extractedAt      DateTime?        @map("extracted_at")
+  finalUrl         String?          @map("final_url")
+  canonicalUrl     String?          @map("canonical_url")
+  siteName         String?          @map("site_name")
+  language         String?
+  summary          String?
+  contentText      String?          @map("content_text")
+  /// Sanitised HTML (sanitize-html allowlist). Never render unsanitised.
+  contentHtml      String?          @map("content_html")
+  wordCount        Int?             @map("word_count")
+  readingMinutes   Int?             @map("reading_minutes")
+  images           Json?            @default("[]")
+  metadata         Json?            @default("{}")
+  contentHash      String?          @map("content_hash")
+  /// 64-bit SimHash as 16 hex chars.
+  simhash          String?
+  duplicateWarnings Json?           @default("[]") @map("duplicate_warnings")
+
+  authorId  String   @map("author_id")
+  authorRef User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  tags      Tag[]
+  verificationTokens VerificationToken[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([type, status])
+  @@index([publishedAt])
+  @@index([contentHash])
+  @@index([authorId])
+  @@map("contents")
+}
+
+model Tag {
+  id        String    @id @default(cuid())
+  name      String
+  slug      String    @unique
+  contents  Content[]
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("tags")
+}
+
+model VerificationToken {
+  id            String             @id @default(cuid())
+  contentId     String             @map("content_id")
+  content       Content            @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  method        VerificationMethod
+  token         String             @unique
+  expiresAt     DateTime           @map("expires_at")
+  attempts      Int                @default(0)
+  lastCheckedAt DateTime?          @map("last_checked_at")
+  lastError     String?            @map("last_error")
+  verifiedAt    DateTime?          @map("verified_at")
+  /// Set when superseded by a newer token for the same content item.
+  revokedAt     DateTime?          @map("revoked_at")
+  createdAt     DateTime           @default(now()) @map("created_at")
+
+  @@index([contentId, createdAt])
+  @@map("verification_tokens")
+}
+
+// ─────────────────────────── System ───────────────────────────
+
+/// Singleton row (id = 1).
+model SystemSettings {
+  id                Int      @id @default(1)
+  allowRegistration Boolean  @default(true) @map("allow_registration")
+  siteName          String   @default("My Portfolio") @map("site_name")
+  portfolioUrl      String?  @map("portfolio_url")
+  /// Minimum words for a page to count as meaningful content.
+  minWordCount      Int      @default(150) @map("min_word_count")
+  tokenTtlHours     Int      @default(72) @map("token_ttl_hours")
+  publicApiEnabled  Boolean  @default(true) @map("public_api_enabled")
+  /// Origins allowed to call the public API from a browser (CORS).
+  allowedOrigins    String[] @default([]) @map("allowed_origins")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?  @map("actor_id")
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id")
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}

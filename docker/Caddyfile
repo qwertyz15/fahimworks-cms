@@ -1,0 +1,8 @@
+# Automatic HTTPS (Let's Encrypt) in front of the app.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000 {
+		# Caddy sets X-Forwarded-For to the real client IP (TRUSTED_PROXY_HOPS=1).
+		header_up X-Real-IP {remote_host}
+	}
+}
