@@ -3,7 +3,7 @@ import { common, createLowlight } from "lowlight";
 import katex from "katex";
 import sanitizeHtml from "sanitize-html";
 import { countWords } from "./extraction/parse";
-import { ALIGNMENTS, CALLOUT_VARIANTS, NOTE_REF_RE, EMBED_HOSTS, EMBED_SRC_RE, HIGHLIGHT_COLORS, IMAGE_WIDTHS, KATEX_OPTIONS, MAX_LATEX, TEXT_COLORS } from "@/lib/editor-shared";
+import { ALIGNMENTS, CALLOUT_VARIANTS, FONT_FAMILIES, FONT_SIZES, NOTE_REF_RE, EMBED_HOSTS, EMBED_SRC_RE, HIGHLIGHT_COLORS, IMAGE_WIDTHS, KATEX_OPTIONS, MAX_LATEX, TEXT_COLORS } from "@/lib/editor-shared";
 
 /**
  * Server-side processing of Notebook (Tiptap) HTML. Pure functions — no
@@ -17,6 +17,8 @@ const TEXT_COLOR_SET = new Set<string>(TEXT_COLORS);
 const HIGHLIGHT_SET = new Set<string>(HIGHLIGHT_COLORS);
 const ALIGN_SET = new Set<string>(ALIGNMENTS.filter((a) => a !== "left"));
 const WIDTH_SET = new Set<string>(IMAGE_WIDTHS);
+const SIZE_SET = new Set<string>(FONT_SIZES);
+const FONT_SET = new Set<string>(FONT_FAMILIES);
 const ALIGNABLE = ["p", "h1", "h2", "h3", "h4"] as const;
 const CALLOUT_SET = new Set<string>(CALLOUT_VARIANTS);
 const DIV_TYPES = new Set(["block-math", "detailsContent"]);
@@ -63,7 +65,7 @@ const OPTIONS: sanitizeHtml.IOptions = {
     figcaption: [],
     code: ["class"],
     pre: ["class"],
-    span: ["class", "data-text-color", "data-type", "data-latex"],
+    span: ["class", "data-text-color", "data-size", "data-font", "data-type", "data-latex"],
     aside: ["data-callout"],
     details: [],
     summary: [],
@@ -190,6 +192,8 @@ export function sanitizeNotebookHtml(html: string, opts: SanitizeOptions = {}): 
       span: (tagName, attribs) => {
         keepIf(attribs, "data-type", (v) => v === "inline-math");
         mathAttrs(attribs, "inline-math");
+        keepIf(attribs, "data-size", (v) => SIZE_SET.has(v));
+        keepIf(attribs, "data-font", (v) => FONT_SET.has(v));
         return { tagName, attribs: keepIf(attribs, "data-text-color", (v) => TEXT_COLOR_SET.has(v)) };
       },
       aside: (tagName, attribs) => ({ tagName, attribs: { "data-callout": CALLOUT_SET.has(attribs["data-callout"] ?? "") ? attribs["data-callout"]! : "note" } }),

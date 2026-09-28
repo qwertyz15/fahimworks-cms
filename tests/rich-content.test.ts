@@ -224,3 +224,17 @@ describe("link cards", () => {
     expect(d.contentText).toBe("Short intro text for this post goes right here.");
   });
 });
+
+describe("font size, font family and the wider colour palette", () => {
+  it("keeps the named sizes, fonts and new colours", () => {
+    const out = clean('<p><span data-size="huge">Big</span> <span data-font="handwriting">note</span> <span data-text-color="teal">teal</span> <span data-text-color="brown" data-font="serif" data-size="large">all three</span></p>');
+    expect(out).toContain('<span data-size="huge">Big</span>');
+    expect(out).toContain('<span data-font="handwriting">note</span>');
+    expect(out).toContain('<span data-text-color="teal">teal</span>');
+    expect(out).toMatch(/<span (?=[^>]*data-text-color="brown")(?=[^>]*data-font="serif")(?=[^>]*data-size="large")[^>]*>all three<\/span>/);
+  });
+  it("drops raw sizes, font stacks and styles", () => {
+    const out = clean('<p><span data-size="72px" data-font="Comic Sans MS" style="font-size:72px;font-family:x" data-text-color="#ff0000">x</span></p>');
+    expect(out).toBe("<p><span>x</span></p>");
+  });
+});

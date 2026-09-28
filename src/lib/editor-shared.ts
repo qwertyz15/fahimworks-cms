@@ -3,7 +3,7 @@
  * both sides agree on what's allowed. Pure — no DOM, no Node APIs.
  */
 
-export const TEXT_COLORS = ["gray", "red", "orange", "green", "blue", "purple"] as const;
+export const TEXT_COLORS = ["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink", "brown"] as const;
 export const HIGHLIGHT_COLORS = ["yellow", "green", "blue", "pink", "purple", "orange"] as const;
 export type TextColor = (typeof TEXT_COLORS)[number];
 export type HighlightColor = (typeof HIGHLIGHT_COLORS)[number];
@@ -65,3 +65,11 @@ export const KATEX_OPTIONS = { output: "mathml", throwOnError: true, strict: "ig
 
 /** Content ids (cuid) referenced by internal links. */
 export const NOTE_REF_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** Font sizes relative to the surrounding text, stored as data-size (none = normal). */
+export const FONT_SIZES = ["small", "large", "xlarge", "huge"] as const;
+export type FontSize = (typeof FONT_SIZES)[number];
+
+/** Font families, stored as data-font (none = the default sans). */
+export const FONT_FAMILIES = ["serif", "mono", "handwriting", "rounded", "condensed", "book", "display"] as const;
+export type FontFamily = (typeof FONT_FAMILIES)[number];

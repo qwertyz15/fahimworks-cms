@@ -11,7 +11,7 @@ import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Details, DetailsContent, DetailsSummary } from "@tiptap/extension-details";
 import { mathExtensions } from "./math";
 import { Figure } from "./figure";
-import { Attachment, AudioFile, Callout, LinkCard, DataTextAlign, DetailsTitleEnter, NamedHighlight, TextColorMark, VideoEmbed, VideoFile } from "./rich-nodes";
+import { Attachment, AudioFile, Callout, FontFamilyMark, FontSizeMark, LinkCard, DataTextAlign, DetailsTitleEnter, NamedHighlight, TextColorMark, VideoEmbed, VideoFile } from "./rich-nodes";
 import { SlashCommand } from "./slash-menu";
 import { NoteLink, NoteLinkSuggestion } from "./note-links";
 
@@ -40,6 +40,8 @@ export function notebookExtensions() {
     TaskList,
     TaskItem.configure({ nested: true }),
     TextColorMark,
+    FontSizeMark,
+    FontFamilyMark,
     NamedHighlight,
     VideoEmbed,
     VideoFile,

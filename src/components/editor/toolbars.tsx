@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Editor } from "@tiptap/core";
 import { useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { PluginKey } from "@tiptap/pm/state";
 import {
+  ALargeSmall,
   AlignCenter,
   AlignJustify,
   AlignLeft,
@@ -22,12 +23,24 @@ import {
   Rows3,
   Strikethrough,
   Trash2,
+  Type,
   Underline,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HIGHLIGHT_COLORS, TEXT_COLORS, type HighlightColor, type TextColor } from "./rich-nodes";
-import type { Alignment } from "@/lib/editor-shared";
+import { FONT_FAMILIES, FONT_SIZES, type Alignment, type FontFamily, type FontSize } from "@/lib/editor-shared";
+
+const SIZE_LABELS: Record<FontSize, string> = { small: "Small", large: "Large", xlarge: "Extra large", huge: "Huge" };
+const FONT_LABELS: Record<FontFamily, string> = {
+  serif: "Serif",
+  mono: "Mono",
+  handwriting: "Handwriting",
+  rounded: "Rounded",
+  condensed: "Condensed",
+  book: "Book",
+  display: "Display",
+};
 
 const ALIGN_OPTIONS: { value: Alignment; label: string; icon: typeof AlignLeft }[] = [
   { value: "left", label: "Align left (Ctrl+Shift+L)", icon: AlignLeft },
@@ -61,7 +74,7 @@ const SAFE_LINK = /^(https?:\/\/|mailto:)/i;
 /** Floating toolbar shown when text is selected (not in code blocks). */
 export function SelectionToolbar({ editor }: { editor: Editor }) {
   const [linkMode, setLinkMode] = useState(false);
-  const [palette, setPalette] = useState<"text" | "highlight" | "align" | null>(null);
+  const [palette, setPalette] = useState<"text" | "highlight" | "align" | "size" | "font" | null>(null);
   const [href, setHref] = useState("");
   const state = useEditorState({
     editor,
@@ -76,8 +89,26 @@ export function SelectionToolbar({ editor }: { editor: Editor }) {
       textColor: (e.getAttributes("textColor").color as string | undefined) ?? null,
       highlight: e.isActive("highlight") ? ((e.getAttributes("highlight").color as string | undefined) ?? "yellow") : null,
       align: ((["center", "right", "justify"] as const).find((a) => e.isActive({ textAlign: a })) ?? "left") as Alignment,
+      size: (e.getAttributes("fontSize").value as FontSize | undefined) ?? null,
+      font: (e.getAttributes("fontFamily").value as FontFamily | undefined) ?? null,
     }),
   });
+
+  // Escape, or selecting other text, closes an open menu (size, font, colour…).
+  useEffect(() => {
+    if (!palette) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPalette(null);
+    };
+    const onSelection = () => setPalette(null);
+    const dom = editor.view.dom;
+    dom.addEventListener("keydown", onKey);
+    editor.on("selectionUpdate", onSelection);
+    return () => {
+      dom.removeEventListener("keydown", onKey);
+      editor.off("selectionUpdate", onSelection);
+    };
+  }, [palette, editor]);
 
   const applyLink = () => {
     const value = href.trim();
@@ -105,7 +136,45 @@ export function SelectionToolbar({ editor }: { editor: Editor }) {
       }}
       className="z-40 flex items-center gap-0.5 rounded-xl border bg-surface p-1 shadow-pop"
     >
-      {palette === "align" ? (
+      {palette === "size" ? (
+        <div className="flex items-center gap-0.5 px-0.5" role="group" aria-label="Font size">
+          {[null, ...FONT_SIZES].map((v) => (
+            <button
+              key={v ?? "normal"}
+              type="button"
+              aria-pressed={state.size === v}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                if (v) editor.chain().focus().setFontSize(v).run();
+                else editor.chain().focus().unsetFontSize().run();
+                setPalette(null);
+              }}
+              className={cn("h-8 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground", state.size === v && "bg-muted font-medium text-foreground")}
+            >
+              {v ? SIZE_LABELS[v] : "Normal"}
+            </button>
+          ))}
+        </div>
+      ) : palette === "font" ? (
+        <div className="grid grid-cols-4 gap-0.5 p-0.5" role="group" aria-label="Font">
+          {[null, ...FONT_FAMILIES].map((v) => (
+            <button
+              key={v ?? "sans"}
+              type="button"
+              aria-pressed={state.font === v}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                if (v) editor.chain().focus().setFontFamily(v).run();
+                else editor.chain().focus().unsetFontFamily().run();
+                setPalette(null);
+              }}
+              className={cn("h-9 rounded-md px-2.5 text-left text-[13px] whitespace-nowrap text-muted-foreground hover:bg-muted hover:text-foreground", state.font === v && "bg-muted text-foreground")}
+            >
+              <span {...(v ? { "data-font": v } : {})}>{v ? FONT_LABELS[v] : "Sans"}</span>
+            </button>
+          ))}
+        </div>
+      ) : palette === "align" ? (
         <div className="flex items-center gap-0.5" role="group" aria-label="Alignment">
           {ALIGN_OPTIONS.map((o) => (
             <ToolButton
@@ -122,7 +191,7 @@ export function SelectionToolbar({ editor }: { editor: Editor }) {
           ))}
         </div>
       ) : palette ? (
-        <div className="flex items-center gap-1 px-1" role="group" aria-label={palette === "text" ? "Text colour" : "Highlight colour"}>
+        <div className={cn("items-center gap-1 px-1", palette === "text" ? "grid grid-cols-6 py-0.5" : "flex")} role="group" aria-label={palette === "text" ? "Text colour" : "Highlight colour"}>
           {(palette === "text" ? TEXT_COLORS : HIGHLIGHT_COLORS).map((c) => (
             <button
               key={c}
@@ -198,6 +267,12 @@ export function SelectionToolbar({ editor }: { editor: Editor }) {
           </ToolButton>
           <ToolButton label="Inline code (Ctrl+E)" active={state.code} onClick={() => editor.chain().focus().toggleCode().run()}>
             <Code />
+          </ToolButton>
+          <ToolButton label="Font size" active={Boolean(state.size)} onClick={() => setPalette("size")}>
+            <ALargeSmall />
+          </ToolButton>
+          <ToolButton label="Font" active={Boolean(state.font)} onClick={() => setPalette("font")}>
+            <Type />
           </ToolButton>
           <ToolButton label="Text colour" active={Boolean(state.textColor)} onClick={() => setPalette("text")}>
             <Baseline />

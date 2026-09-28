@@ -7,7 +7,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from "@tiptap/react";
 import { AlertTriangle, FileText, Globe, Info, Lightbulb, Music, OctagonAlert, Play, Trash2, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ALIGNMENTS, CALLOUT_VARIANTS, HIGHLIGHT_COLORS, type CalloutVariant, TEXT_COLORS, embedSrc, parseVideoUrl, type TextColor, type VideoProvider } from "@/lib/editor-shared";
+import { ALIGNMENTS, CALLOUT_VARIANTS, FONT_FAMILIES, FONT_SIZES, HIGHLIGHT_COLORS, type CalloutVariant, type FontFamily, type FontSize, TEXT_COLORS, embedSrc, parseVideoUrl, type TextColor, type VideoProvider } from "@/lib/editor-shared";
 
 /*
  * Rich blocks and marks for the Notebook editor. Everything renders to plain,
@@ -26,43 +26,63 @@ declare module "@tiptap/core" {
       setTextColor: (color: TextColor) => ReturnType;
       unsetTextColor: () => ReturnType;
     };
+    fontSize: {
+      setFontSize: (size: FontSize) => ReturnType;
+      unsetFontSize: () => ReturnType;
+    };
+    fontFamily: {
+      setFontFamily: (font: FontFamily) => ReturnType;
+      unsetFontFamily: () => ReturnType;
+    };
   }
 }
 
-/** Text colour mark: <span data-text-color="red">…</span>. */
-export const TextColorMark = Mark.create({
-  name: "textColor",
-  addAttributes() {
-    return {
-      color: {
-        default: null,
-        parseHTML: (el: HTMLElement) => {
-          const c = el.getAttribute("data-text-color");
-          return (TEXT_COLORS as readonly string[]).includes(c ?? "") ? c : null;
+/**
+ * A mark stored as <span data-…="value"> with a fixed list of allowed values.
+ * `consuming: false` lets one span carry several of these (size + font + colour).
+ */
+function dataSpanMark(name: string, attr: string, values: readonly string[], set: string, unset: string, key = "value") {
+  return Mark.create({
+    name,
+    addAttributes() {
+      return {
+        [key]: {
+          default: null,
+          parseHTML: (el: HTMLElement) => {
+            const v = el.getAttribute(attr);
+            return values.includes(v ?? "") ? v : null;
+          },
+          renderHTML: (attrs: Record<string, string | null | undefined>) => (attrs[key] ? { [attr]: attrs[key] } : {}),
         },
-        renderHTML: (attrs: { color?: string | null }) => (attrs.color ? { "data-text-color": attrs.color } : {}),
-      },
-    };
-  },
-  parseHTML() {
-    return [{ tag: "span[data-text-color]" }];
-  },
-  renderHTML({ HTMLAttributes }) {
-    return ["span", mergeAttributes(HTMLAttributes), 0];
-  },
-  addCommands() {
-    return {
-      setTextColor:
-        (color) =>
-        ({ commands }) =>
-          commands.setMark(this.name, { color }),
-      unsetTextColor:
-        () =>
-        ({ commands }) =>
-          commands.unsetMark(this.name),
-    };
-  },
-});
+      };
+    },
+    parseHTML() {
+      return [{ tag: `span[${attr}]`, consuming: false, getAttrs: (el: HTMLElement) => (values.includes(el.getAttribute(attr) ?? "") ? null : false) }];
+    },
+    renderHTML({ HTMLAttributes }) {
+      return ["span", mergeAttributes(HTMLAttributes), 0];
+    },
+    addCommands() {
+      return {
+        [set]:
+          (value: string) =>
+          ({ commands }: { commands: { setMark: (n: string, a: object) => boolean } }) =>
+            commands.setMark(name, { [key]: value }),
+        [unset]:
+          () =>
+          ({ commands }: { commands: { unsetMark: (n: string) => boolean } }) =>
+            commands.unsetMark(name),
+      } as never;
+    },
+  });
+}
+
+/** Text colour: <span data-text-color="red">…</span>. (Attribute key "color" matches documents saved earlier.) */
+export const TextColorMark = dataSpanMark("textColor", "data-text-color", TEXT_COLORS, "setTextColor", "unsetTextColor", "color");
+/** Font size: <span data-size="large">…</span>. */
+export const FontSizeMark = dataSpanMark("fontSize", "data-size", FONT_SIZES, "setFontSize", "unsetFontSize");
+/** Font family: <span data-font="serif">…</span>. */
+export const FontFamilyMark = dataSpanMark("fontFamily", "data-font", FONT_FAMILIES, "setFontFamily", "unsetFontFamily");
 
 /** Highlight with a named colour: <mark data-color="yellow">…</mark>. */
 export const NamedHighlight = Highlight.extend({
