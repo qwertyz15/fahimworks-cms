@@ -21,6 +21,8 @@ import { SelectionToolbar, TableToolbar } from "./toolbars";
 import { PICK_AUDIO_EVENT, PICK_FILE_EVENT, PICK_IMAGE_EVENT, PICK_VIDEO_EVENT } from "./slash-menu";
 import { ACCEPTED_IMAGE_TYPES, ACCEPTED_TYPES, AUDIO_ACCEPT, FILE_ACCEPT, fileType, kindOf, uploadFile, uploadImage, type UploadKind } from "./upload";
 import { parseVideoUrl } from "./rich-nodes";
+import { blockBoundary, insertBlock } from "./blocks";
+import { MathDialog } from "./math-dialog";
 
 export interface EditableEntry {
   id: string;
@@ -44,27 +46,6 @@ const AUTOSAVE_MS = 10_000;
 const timeFmt = new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit" });
 
 /** `articleBaseUrl`: public address prefix for published entries, e.g. https://timeline.fahimworks.dev/p/ */
-/**
- * Where to put a block image for a given position: never inside a paragraph
- * (that would split the sentence) — before the block when at its start,
- * otherwise right after it.
- */
-function blockBoundary(doc: import("@tiptap/pm/model").Node, pos: number): number | { from: number; to: number } {
-  const $pos = doc.resolve(Math.max(0, Math.min(pos, doc.content.size)));
-  if (!$pos.parent.isTextblock || $pos.depth === 0) return $pos.pos;
-  // An empty line is replaced by the block (no blank gaps left behind).
-  if ($pos.parent.content.size === 0) return { from: $pos.before(), to: $pos.after() };
-  return $pos.parentOffset === 0 ? $pos.before() : $pos.after();
-}
-
-/**
- * Insert a media block and put the caret on a fresh line below it. Without
- * this the new block stays selected, and the next keystroke would replace it.
- */
-function insertBlock(editor: import("@tiptap/core").Editor, at: number | { from: number; to: number }, node: Record<string, unknown>) {
-  editor.chain().focus().insertContentAt(at, [node, { type: "paragraph" }]).run();
-}
-
 export interface EditorUploadConfig {
   enabled: boolean;
   /** Images. */
@@ -90,6 +71,8 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
   const filePicker = useRef<HTMLInputElement>(null);
   const audioPicker = useRef<HTMLInputElement>(null);
   const [videoDialog, setVideoDialog] = useState(false);
+  /** Insert once the video dialog has closed (see Dialog's afterClose). */
+  const afterVideoDialog = useRef<(() => void) | null>(null);
   const [videoUrl, setVideoUrl] = useState("");
   const coverPicker = useRef<HTMLInputElement>(null);
   // Set below once the editor exists; used by paste/drop handlers created at init.
@@ -636,6 +619,11 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
       <Dialog
         open={videoDialog}
         onClose={() => setVideoDialog(false)}
+        afterClose={() => {
+          const run = afterVideoDialog.current;
+          afterVideoDialog.current = null;
+          run?.();
+        }}
         title="Add a video"
         description="Paste a YouTube or Vimeo link, or upload an MP4 / WebM file."
         footer={
@@ -651,8 +639,8 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
                   toast.error("That doesn't look like a YouTube or Vimeo link.");
                   return;
                 }
+                afterVideoDialog.current = () => insertVideo(v);
                 setVideoDialog(false);
-                insertVideo(v);
               }}
             >
               Embed link
@@ -670,11 +658,13 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
           onChange={(e) => {
             const files = [...(e.target.files ?? [])];
             e.target.value = "";
+            if (files.length) afterVideoDialog.current = () => void insertImages(files, undefined, "video");
             setVideoDialog(false);
-            if (files.length) void insertImages(files, undefined, "video");
           }}
         />
       </Dialog>
+
+      <MathDialog editor={editor} />
 
       <Dialog
         open={confirmDelete}

@@ -52,3 +52,13 @@ export type Alignment = (typeof ALIGNMENTS)[number];
 /** Image size presets, stored as data-width on the <figure> (none = full column). */
 export const IMAGE_WIDTHS = ["small", "medium", "wide"] as const;
 export type ImageWidth = (typeof IMAGE_WIDTHS)[number];
+
+/** Callout variants, stored as <aside data-callout="…">. */
+export const CALLOUT_VARIANTS = ["note", "tip", "warning", "danger"] as const;
+export type CalloutVariant = (typeof CALLOUT_VARIANTS)[number];
+
+/** Longest LaTeX source kept for one equation. */
+export const MAX_LATEX = 2000;
+
+/** KaTeX settings shared by the editor preview and the server renderer (MathML only: no CSS or fonts needed). */
+export const KATEX_OPTIONS = { output: "mathml", throwOnError: true, strict: "ignore", trust: false, maxSize: 20, maxExpand: 500 } as const;

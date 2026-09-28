@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EMBED_SRC_RE, embedSrc, parseVideoUrl } from "@/lib/editor-shared";
-import { mediaSources, sanitizeNotebookHtml as clean } from "@/server/services/notebook-html";
+import { deriveFields, mediaSources, renderNotebookHtml, sanitizeNotebookHtml as clean } from "@/server/services/notebook-html";
 
 describe("text colour + highlight", () => {
   it("keeps palette colours", () => {
@@ -120,5 +120,55 @@ describe("uploaded audio", () => {
   });
   it("counts audio as uploaded media", () => {
     expect(mediaSources('<figure data-audio=""><audio src="https://m.example/a.mp3" controls="true"></audio></figure>')).toEqual(["https://m.example/a.mp3"]);
+  });
+});
+
+describe("callouts and toggles", () => {
+  it("keeps callout variants; unknown ones fall back to note", () => {
+    expect(clean('<aside data-callout="warning"><p>Careful</p></aside>')).toBe('<aside data-callout="warning"><p>Careful</p></aside>');
+    expect(clean('<aside data-callout="evil" onclick="x()" style="color:red"><p>x</p></aside>')).toBe('<aside data-callout="note"><p>x</p></aside>');
+  });
+  it("keeps native details/summary toggles", () => {
+    const html = '<details><summary>More</summary><div data-type="detailsContent"><p>Hidden</p></div></details>';
+    expect(clean(html)).toBe(html);
+    expect(clean('<details open ontoggle="x()"><summary onclick="y()">S</summary></details>')).toBe("<details><summary>S</summary></details>");
+  });
+  it("drops unknown div types", () => {
+    expect(clean('<div data-type="evil"><p>x</p></div>')).toBe("<div><p>x</p></div>");
+  });
+});
+
+describe("equations", () => {
+  it("renders inline and block LaTeX to MathML on the server", () => {
+    const out = renderNotebookHtml('<p>Energy <span data-type="inline-math" data-latex="E=mc^2"></span> holds.</p><div data-type="block-math" data-latex="\\frac{a}{b}"></div>');
+    expect(out).toMatch(/<span data-type="inline-math" data-latex="E=mc\^2"><span><math><semantics><mrow><mi>E<\/mi>/);
+    expect(out).toContain('<math display="block">');
+    expect(out).toContain("<mfrac><mi>a</mi><mi>b</mi></mfrac>");
+    expect(out).toContain('<annotation encoding="application/x-tex">');
+  });
+  it("shows invalid LaTeX as source text", () => {
+    const out = renderNotebookHtml('<p><span data-type="inline-math" data-latex="\\frac{"></span></p>');
+    expect(out).toContain("<code>\\frac{</code>");
+    expect(out).not.toContain("<math");
+  });
+  it("never lets MathML from the browser through", () => {
+    const evil = '<math><mtext><table><mglyph><style><img src=x onerror=alert(1)></style></mglyph></table></mtext><maction actiontype="statusline" href="javascript:alert(1)">x</maction></math>';
+    const out = renderNotebookHtml(`<p>${evil}</p>`);
+    expect(out).not.toMatch(/<math|<mglyph|<style|onerror|javascript:|href=/);
+  });
+  it("cannot smuggle markup through data-latex", () => {
+    const out = renderNotebookHtml('<p><span data-type="inline-math" data-latex="\\text{<img src=x onerror=alert(1)>}"></span></p>');
+    expect(out).not.toMatch(/<img\b/);
+    // KaTeX turns the spaces inside \\text{} into non-breaking spaces.
+    expect(out).toMatch(/<mtext>&lt;img.src=x.onerror=alert\(1\)&gt;<\/mtext>/);
+  });
+  it("ignores LaTeX commands that could load or link things", () => {
+    const out = renderNotebookHtml('<div data-type="block-math" data-latex="\\href{javascript:alert(1)}{x} \\includegraphics{https://evil.example/a.png}"></div>');
+    expect(out).not.toMatch(/<img\b|<a\b|\shref=|\ssrc=/);
+    expect(out).toContain("<mtext>\\href</mtext>");
+  });
+  it("counts an equation's words once", () => {
+    const html = renderNotebookHtml('<p>Energy is <span data-type="inline-math" data-latex="E=mc^2"></span> here.</p>');
+    expect(deriveFields(html).contentText).toBe("Energy is E=mc^2 here.");
   });
 });

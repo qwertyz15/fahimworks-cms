@@ -5,8 +5,9 @@ import { Extension, type Editor, type Range } from "@tiptap/core";
 import { ReactRenderer } from "@tiptap/react";
 import Suggestion, { type SuggestionKeyDownProps, type SuggestionProps } from "@tiptap/suggestion";
 import { computePosition, flip, offset, shift } from "@floating-ui/dom";
-import { Code2, Heading1, Heading2, Heading3, Heading4, ImagePlus, List, ListChecks, ListOrdered, Minus, Music, Paperclip, Pilcrow, Quote, Table, Video, type LucideIcon } from "lucide-react";
+import { ChevronRight, Code2, Heading1, Heading2, Heading3, Heading4, ImagePlus, List, ListChecks, ListOrdered, MessageSquareWarning, Minus, Music, Paperclip, Sigma, SquareRadical, Pilcrow, Quote, Table, Video, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { editMath } from "./math";
 
 /** The "/" command menu: type "/" in the editor to insert a block. */
 
@@ -34,6 +35,37 @@ export const SLASH_ITEMS: SlashItem[] = [
   { title: "Numbered list", description: "Ordered list", icon: ListOrdered, keywords: ["ol", "ordered", "1."], run: (e, r) => e.chain().focus().deleteRange(r).toggleOrderedList().run() },
   { title: "Checklist", description: "List with tick boxes", icon: ListChecks, keywords: ["todo", "task", "checkbox", "[]"], run: (e, r) => e.chain().focus().deleteRange(r).toggleTaskList().run() },
   { title: "Quote", description: "Highlighted quotation", icon: Quote, keywords: ["blockquote", "cite"], run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run() },
+  { title: "Callout", description: "Note, tip, warning or danger box", icon: MessageSquareWarning, keywords: ["note", "tip", "warning", "info", "alert", "admonition"], run: (e, r) => e.chain().focus().deleteRange(r).setCallout("note").run() },
+  {
+    title: "Toggle",
+    description: "Collapsible section",
+    icon: ChevronRight,
+    keywords: ["details", "collapse", "accordion", "spoiler", "fold"],
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).setDetails().run();
+      openDetailsAtSelection(e);
+    },
+  },
+  {
+    title: "Equation",
+    description: "LaTeX block, e.g. E = mc^2",
+    icon: Sigma,
+    keywords: ["math", "latex", "formula", "katex", "tex"],
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).run();
+      editMath({ kind: "block", pos: null, latex: "" });
+    },
+  },
+  {
+    title: "Inline equation",
+    description: "Math inside a sentence (or type $$x^2$$)",
+    icon: SquareRadical,
+    keywords: ["math", "latex", "formula", "inline"],
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).run();
+      editMath({ kind: "inline", pos: null, latex: "" });
+    },
+  },
   { title: "Code block", description: "Code with syntax highlighting", icon: Code2, keywords: ["code", "snippet", "pre"], run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run() },
   {
     title: "Table",
@@ -85,6 +117,17 @@ export const SLASH_ITEMS: SlashItem[] = [
   },
   { title: "Divider", description: "Horizontal line", icon: Minus, keywords: ["hr", "line", "separator"], run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run() },
 ];
+
+/** A new toggle starts open, so Enter in its title moves into the content. */
+function openDetailsAtSelection(editor: Editor) {
+  const { $from } = editor.state.selection;
+  for (let d = $from.depth; d > 0; d--) {
+    if ($from.node(d).type.name !== "details") continue;
+    const dom = editor.view.nodeDOM($from.before(d)) as HTMLElement | null;
+    if (dom && !dom.classList.contains("is-open")) dom.querySelector<HTMLButtonElement>(":scope > button")?.click();
+    return;
+  }
+}
 
 export function filterSlashItems(query: string): SlashItem[] {
   const q = query.trim().toLowerCase();

@@ -1,8 +1,9 @@
 import * as cheerio from "cheerio";
 import { common, createLowlight } from "lowlight";
+import katex from "katex";
 import sanitizeHtml from "sanitize-html";
 import { countWords } from "./extraction/parse";
-import { ALIGNMENTS, EMBED_HOSTS, EMBED_SRC_RE, HIGHLIGHT_COLORS, IMAGE_WIDTHS, TEXT_COLORS } from "@/lib/editor-shared";
+import { ALIGNMENTS, CALLOUT_VARIANTS, EMBED_HOSTS, EMBED_SRC_RE, HIGHLIGHT_COLORS, IMAGE_WIDTHS, KATEX_OPTIONS, MAX_LATEX, TEXT_COLORS } from "@/lib/editor-shared";
 
 /**
  * Server-side processing of Notebook (Tiptap) HTML. Pure functions — no
@@ -17,6 +18,29 @@ const HIGHLIGHT_SET = new Set<string>(HIGHLIGHT_COLORS);
 const ALIGN_SET = new Set<string>(ALIGNMENTS.filter((a) => a !== "left"));
 const WIDTH_SET = new Set<string>(IMAGE_WIDTHS);
 const ALIGNABLE = ["p", "h1", "h2", "h3", "h4"] as const;
+const CALLOUT_SET = new Set<string>(CALLOUT_VARIANTS);
+const DIV_TYPES = new Set(["block-math", "detailsContent"]);
+
+/**
+ * MathML produced by KaTeX. Only allowed in the final pass, after renderMath()
+ * has replaced every equation with KaTeX's own output — MathML sent by the
+ * browser is removed in the first pass. No annotation-xml / mglyph / links.
+ */
+const MATHML_TAGS = [
+  "math", "semantics", "annotation", "mrow", "mi", "mn", "mo", "ms", "mtext", "mspace", "msup", "msub", "msubsup",
+  "mfrac", "msqrt", "mroot", "mover", "munder", "munderover", "mtable", "mtr", "mtd", "mlabeledtr", "mstyle",
+  "mpadded", "mphantom", "menclose", "mmultiscripts", "mprescripts", "none",
+];
+const MATHML_ATTRS = [
+  "display", "mathvariant", "stretchy", "fence", "separator", "lspace", "rspace", "minsize", "maxsize", "symmetric",
+  "largeop", "movablelimits", "accent", "accentunder", "width", "height", "depth", "voffset", "linethickness",
+  "notation", "encoding", "columnalign", "rowalign", "columnspacing", "rowspacing", "columnlines", "rowlines",
+  "frame", "framespacing", "displaystyle", "scriptlevel", "form",
+];
+const MATHML_VALUE = /^[\w\s./%+-]{0,80}$/;
+const MATHML_OPTIONS: Partial<sanitizeHtml.IOptions> = {
+  allowedAttributes: Object.fromEntries(MATHML_TAGS.map((t) => [t, MATHML_ATTRS])),
+};
 const SPAN_CLASSES = [/^hljs(-[\w-]+)?$/, /^attachment-(name|meta)$/];
 
 const OPTIONS: sanitizeHtml.IOptions = {
@@ -26,6 +50,7 @@ const OPTIONS: sanitizeHtml.IOptions = {
     "a", "ul", "ol", "li", "blockquote", "label", "input", "div",
     "table", "colgroup", "col", "thead", "tbody", "tr", "th", "td",
     "img", "figure", "figcaption", "video", "audio", "iframe",
+    "aside", "details", "summary",
   ],
   allowedAttributes: {
     a: ["href", "title", "target", "rel", "download", "data-attachment", "data-size", "data-mime"],
@@ -38,12 +63,15 @@ const OPTIONS: sanitizeHtml.IOptions = {
     figcaption: [],
     code: ["class"],
     pre: ["class"],
-    span: ["class", "data-text-color"],
+    span: ["class", "data-text-color", "data-type", "data-latex"],
+    aside: ["data-callout"],
+    details: [],
+    summary: [],
     mark: ["data-color"],
     ul: ["data-type"],
     li: ["data-type", "data-checked"],
     input: ["type", "checked", "disabled"],
-    div: ["data-video-embed"],
+    div: ["data-video-embed", "data-type", "data-latex"],
     th: ["colspan", "rowspan"],
     td: ["colspan", "rowspan"],
     ol: ["start"],
@@ -66,6 +94,18 @@ const OPTIONS: sanitizeHtml.IOptions = {
 export interface SanitizeOptions {
   /** Extra origins allowed for <img>/<video> even over http (e.g. the local storage server). */
   imageOrigins?: string[];
+  /** Keep KaTeX MathML (internal: only for the pass after renderMath). */
+  allowMathML?: boolean;
+}
+
+/** Equation placeholders: the LaTeX source stays in data-latex (capped). */
+function mathAttrs(attribs: sanitizeHtml.Attributes, type: string) {
+  if (attribs["data-type"] !== type) {
+    delete attribs["data-latex"];
+    return attribs;
+  }
+  if (attribs["data-latex"] !== undefined) attribs["data-latex"] = attribs["data-latex"].slice(0, MAX_LATEX);
+  return attribs;
 }
 
 /** Keep an attribute only when its value passes `ok`. */
@@ -85,9 +125,27 @@ export function sanitizeNotebookHtml(html: string, opts: SanitizeOptions = {}): 
       return "";
     }
   };
+  const math = opts.allowMathML ? MATHML_OPTIONS : null;
   return sanitizeHtml(html, {
     ...OPTIONS,
+    ...(math
+      ? {
+          allowedTags: [...(OPTIONS.allowedTags as string[]), ...MATHML_TAGS],
+          allowedAttributes: { ...(OPTIONS.allowedAttributes as Record<string, string[]>), ...(math.allowedAttributes as Record<string, string[]>) },
+        }
+      : {}),
     transformTags: {
+      ...(math
+        ? Object.fromEntries(
+            MATHML_TAGS.map((t) => [
+              t,
+              (tagName: string, attribs: sanitizeHtml.Attributes) => {
+                for (const k of Object.keys(attribs)) if (!MATHML_VALUE.test(attribs[k] ?? "")) delete attribs[k];
+                return { tagName, attribs };
+              },
+            ]),
+          )
+        : {}),
       a: (tagName, attribs) => {
         keepIf(attribs, "data-size", (v) => /^\d{1,12}$/.test(v));
         keepIf(attribs, "data-mime", (v) => /^[\w.+-]+\/[\w.+-]+$/.test(v));
@@ -125,7 +183,12 @@ export function sanitizeNotebookHtml(html: string, opts: SanitizeOptions = {}): 
           },
         };
       },
-      span: (tagName, attribs) => ({ tagName, attribs: keepIf(attribs, "data-text-color", (v) => TEXT_COLOR_SET.has(v)) }),
+      span: (tagName, attribs) => {
+        keepIf(attribs, "data-type", (v) => v === "inline-math");
+        mathAttrs(attribs, "inline-math");
+        return { tagName, attribs: keepIf(attribs, "data-text-color", (v) => TEXT_COLOR_SET.has(v)) };
+      },
+      aside: (tagName, attribs) => ({ tagName, attribs: { "data-callout": CALLOUT_SET.has(attribs["data-callout"] ?? "") ? attribs["data-callout"]! : "note" } }),
       mark: (tagName, attribs) => ({ tagName, attribs: keepIf(attribs, "data-color", (v) => HIGHLIGHT_SET.has(v)) }),
       ul: (tagName, attribs) => ({ tagName, attribs: keepIf(attribs, "data-type", (v) => v === "taskList") }),
       li: (tagName, attribs) => {
@@ -134,7 +197,11 @@ export function sanitizeNotebookHtml(html: string, opts: SanitizeOptions = {}): 
       },
       // Checklist ticks are read-only on the page.
       input: (tagName, attribs) => ({ tagName, attribs: { type: attribs.type === "checkbox" ? "checkbox" : "hidden-invalid", ...("checked" in attribs ? { checked: "checked" } : {}), disabled: "disabled" } }),
-      div: (tagName, attribs) => ({ tagName, attribs: keepIf(attribs, "data-video-embed", (v) => v === "youtube" || v === "vimeo") }),
+      div: (tagName, attribs) => {
+        keepIf(attribs, "data-type", (v) => DIV_TYPES.has(v));
+        mathAttrs(attribs, "block-math");
+        return { tagName, attribs: keepIf(attribs, "data-video-embed", (v) => v === "youtube" || v === "vimeo") };
+      },
       figure: (tagName, attribs) => {
         keepIf(attribs, "data-video", (v) => v === "");
         keepIf(attribs, "data-audio", (v) => v === "");
@@ -179,9 +246,27 @@ export function highlightCodeBlocks(cleanHtml: string): string {
   return $.html();
 }
 
-/** Full pipeline for a save: sanitise → highlight → sanitise again (defence in depth). */
+// ── Server-side equations ──
+// LaTeX → MathML with KaTeX, so the article needs no maths CSS, fonts or JS.
+export function renderMath(cleanHtml: string): string {
+  const $ = cheerio.load(cleanHtml, null, false);
+  $('span[data-type="inline-math"], div[data-type="block-math"]').each((_, el) => {
+    const node = $(el);
+    const latex = (node.attr("data-latex") ?? "").slice(0, MAX_LATEX);
+    try {
+      node.html(katex.renderToString(latex, { ...KATEX_OPTIONS, displayMode: el.tagName === "div" }));
+    } catch {
+      // Invalid LaTeX: show the source instead of breaking the page.
+      node.html(`<code>${escapeHtml(latex)}</code>`);
+    }
+  });
+  return $.html();
+}
+
+/** Full pipeline for a save: sanitise → highlight → equations → sanitise again (defence in depth). */
 export function renderNotebookHtml(editorHtml: string, opts: SanitizeOptions = {}): string {
-  return sanitizeNotebookHtml(highlightCodeBlocks(sanitizeNotebookHtml(editorHtml, opts)), opts);
+  const base = { imageOrigins: opts.imageOrigins };
+  return sanitizeNotebookHtml(renderMath(highlightCodeBlocks(sanitizeNotebookHtml(editorHtml, base))), { ...base, allowMathML: true });
 }
 
 /** Every uploaded-media URL in (sanitised) HTML: images, videos, audio and attachment links. */
@@ -208,8 +293,12 @@ const SUMMARY_MAX = 280;
 /** Plain text, reading stats, a summary from the first paragraph, and the first image. Input must already be sanitised. */
 export function deriveFields(cleanHtml: string): DerivedFields {
   const $ = cheerio.load(cleanHtml);
+  // Equations count as their LaTeX source once (not the MathML twice over).
+  $('[data-type="inline-math"], [data-type="block-math"]').each((_, el) => {
+    $(el).text(` ${$(el).attr("data-latex") ?? ""} `);
+  });
   // Keep block boundaries as spaces so words don't run together.
-  $("p, h1, h2, h3, h4, li, blockquote, pre, td, th, figcaption, br").after(" ");
+  $("p, h1, h2, h3, h4, li, blockquote, pre, td, th, figcaption, summary, aside, br").after(" ");
   const contentText = $.root().text().replace(/\s+/g, " ").trim();
   const wordCount = countWords(contentText);
 

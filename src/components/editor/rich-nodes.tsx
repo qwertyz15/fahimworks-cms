@@ -1,13 +1,13 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element -- video thumbnails from YouTube */
-import { Mark, Node, mergeAttributes } from "@tiptap/core";
+import { Extension, Mark, Node, mergeAttributes } from "@tiptap/core";
 import Highlight from "@tiptap/extension-highlight";
 import TextAlign from "@tiptap/extension-text-align";
-import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from "@tiptap/react";
-import { FileText, Music, Play, Trash2 } from "lucide-react";
+import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from "@tiptap/react";
+import { AlertTriangle, FileText, Info, Lightbulb, Music, OctagonAlert, Play, Trash2, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ALIGNMENTS, HIGHLIGHT_COLORS, TEXT_COLORS, embedSrc, parseVideoUrl, type TextColor, type VideoProvider } from "@/lib/editor-shared";
+import { ALIGNMENTS, CALLOUT_VARIANTS, HIGHLIGHT_COLORS, type CalloutVariant, TEXT_COLORS, embedSrc, parseVideoUrl, type TextColor, type VideoProvider } from "@/lib/editor-shared";
 
 /*
  * Rich blocks and marks for the Notebook editor. Everything renders to plain,
@@ -101,6 +101,125 @@ export const DataTextAlign = TextAlign.extend({
     ];
   },
 }).configure({ types: ["heading", "paragraph"], alignments: [...ALIGNMENTS], defaultAlignment: null });
+
+// ── Callouts ──────────────────────────────────────────────────────────────
+
+export const CALLOUT_META: Record<CalloutVariant, { label: string; icon: LucideIcon }> = {
+  note: { label: "Note", icon: Info },
+  tip: { label: "Tip", icon: Lightbulb },
+  warning: { label: "Warning", icon: AlertTriangle },
+  danger: { label: "Danger", icon: OctagonAlert },
+};
+
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    callout: { setCallout: (variant?: CalloutVariant) => ReturnType };
+  }
+}
+
+export const Callout = Node.create({
+  name: "callout",
+  group: "block",
+  content: "block+",
+  defining: true,
+  addAttributes() {
+    return {
+      variant: {
+        default: "note",
+        parseHTML: (el: HTMLElement) => {
+          const v = el.getAttribute("data-callout") ?? "";
+          return (CALLOUT_VARIANTS as readonly string[]).includes(v) ? v : "note";
+        },
+        renderHTML: (attrs: { variant?: string }) => ({ "data-callout": attrs.variant ?? "note" }),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "aside[data-callout]" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ["aside", mergeAttributes(HTMLAttributes), 0];
+  },
+  addCommands() {
+    return {
+      setCallout:
+        (variant = "note") =>
+        ({ commands }) =>
+          commands.wrapIn(this.name, { variant }),
+    };
+  },
+  addKeyboardShortcuts() {
+    return {
+      // Enter on an empty last line leaves the callout (like lists).
+      Enter: ({ editor }) => {
+        const { $from, empty } = editor.state.selection;
+        if (!empty || $from.depth < 2) return false;
+        const wrapper = $from.node(-1);
+        const isLastEmpty = $from.parent.type.name === "paragraph" && $from.parent.content.size === 0 && $from.index(-1) === wrapper.childCount - 1;
+        if (wrapper.type.name !== this.name || !isLastEmpty || wrapper.childCount < 2) return false;
+        return editor.commands.lift("paragraph");
+      },
+    };
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(CalloutView);
+  },
+});
+
+function CalloutView({ node, updateAttributes, editor }: ReactNodeViewProps) {
+  const variant = node.attrs.variant as CalloutVariant;
+  const Icon = CALLOUT_META[variant].icon;
+  return (
+    <NodeViewWrapper as="aside" data-callout={variant} className="notebook-callout group/callout">
+      <span contentEditable={false} className="callout-icon" aria-hidden>
+        <Icon className="size-4" />
+      </span>
+      {editor.isEditable && (
+        <select
+          contentEditable={false}
+          value={variant}
+          onChange={(e) => updateAttributes({ variant: e.target.value })}
+          aria-label="Callout type"
+          className="absolute top-2 right-2 rounded-md border bg-surface px-1.5 py-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity group-focus-within/callout:opacity-100 group-hover/callout:opacity-100 focus:opacity-100"
+        >
+          {CALLOUT_VARIANTS.map((v) => (
+            <option key={v} value={v}>
+              {CALLOUT_META[v].label}
+            </option>
+          ))}
+        </select>
+      )}
+      <NodeViewContent className="callout-body" />
+    </NodeViewWrapper>
+  );
+}
+
+// ── Toggles ───────────────────────────────────────────────────────────────
+
+/**
+ * Enter in a toggle's title goes into its (empty) first line and opens it.
+ * The extension's default adds a second empty line instead, which then
+ * stops "Enter on an empty last line" from leaving the toggle.
+ */
+export const DetailsTitleEnter = Extension.create({
+  name: "detailsTitleEnter",
+  priority: 1000,
+  addKeyboardShortcuts() {
+    return {
+      Enter: ({ editor }) => {
+        const { $head, empty } = editor.state.selection;
+        if (!empty || $head.parent.type.name !== "detailsSummary") return false;
+        const contentPos = $head.after();
+        const content = editor.state.doc.nodeAt(contentPos);
+        const first = content?.firstChild;
+        if (content?.type.name !== "detailsContent" || first?.type.name !== "paragraph" || first.content.size > 0) return false;
+        const dom = editor.view.nodeDOM($head.before(-1)) as HTMLElement | null;
+        if (dom && !dom.classList.contains("is-open")) dom.querySelector<HTMLButtonElement>(":scope > button")?.click();
+        return editor.commands.setTextSelection(contentPos + 2);
+      },
+    };
+  },
+});
 
 // ── Video embeds (YouTube / Vimeo) ────────────────────────────────────────
 

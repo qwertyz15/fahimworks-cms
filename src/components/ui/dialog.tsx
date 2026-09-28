@@ -13,9 +13,15 @@ export function Dialog({
   children,
   footer,
   className,
+  afterClose,
 }: {
   open: boolean;
   onClose: () => void;
+  /**
+   * Runs right after the dialog closes (and the browser has moved focus back).
+   * Use it for editor commands: run earlier, that focus restore would reset the caret.
+   */
+  afterClose?: () => void;
   title: ReactNode;
   description?: ReactNode;
   children?: ReactNode;
@@ -23,11 +29,18 @@ export function Dialog({
   className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const afterCloseRef = useRef(afterClose);
+  useEffect(() => {
+    afterCloseRef.current = afterClose;
+  });
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     if (open && !el.open) el.showModal();
-    if (!open && el.open) el.close();
+    if (!open && el.open) {
+      el.close();
+      afterCloseRef.current?.();
+    }
   }, [open]);
 
   return (

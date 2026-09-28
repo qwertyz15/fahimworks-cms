@@ -8,8 +8,10 @@ import { ReactNodeViewRenderer } from "@tiptap/react";
 import { common, createLowlight } from "lowlight";
 import { CodeBlockView } from "./code-block-view";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
+import { Details, DetailsContent, DetailsSummary } from "@tiptap/extension-details";
+import { mathExtensions } from "./math";
 import { Figure } from "./figure";
-import { Attachment, AudioFile, DataTextAlign, NamedHighlight, TextColorMark, VideoEmbed, VideoFile } from "./rich-nodes";
+import { Attachment, AudioFile, Callout, DataTextAlign, DetailsTitleEnter, NamedHighlight, TextColorMark, VideoEmbed, VideoFile } from "./rich-nodes";
 import { SlashCommand } from "./slash-menu";
 
 export const lowlight = createLowlight(common);
@@ -43,8 +45,15 @@ export function notebookExtensions() {
     AudioFile,
     Attachment,
     DataTextAlign,
+    Callout,
+    Details.configure({ persist: false }),
+    DetailsSummary,
+    DetailsContent,
+    DetailsTitleEnter,
+    ...mathExtensions,
     Placeholder.configure({
-      placeholder: ({ node }) => (node.type.name === "heading" ? "Heading" : "Write, or type '/' for blocks…"),
+      placeholder: ({ node }) => (node.type.name === "heading" ? "Heading" : node.type.name === "detailsSummary" ? "Toggle title" : "Write, or type '/' for blocks…"),
+      includeChildren: true,
     }),
     CharacterCount,
     SlashCommand,
