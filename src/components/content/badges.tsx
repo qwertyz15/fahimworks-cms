@@ -20,7 +20,6 @@ const APPROVAL: Record<ApprovalStatus, { label: string; tone: BadgeTone }> = {
 
 const TYPE: Record<ContentType, { label: string; tone: BadgeTone }> = {
   BLOG: { label: "Blog", tone: "indigo" },
-  TUTORIAL: { label: "Tutorial", tone: "blue" },
   ARTICLE: { label: "Article", tone: "pink" },
   PROJECT: { label: "Project", tone: "amber" },
   NOTEBOOK: { label: "Notebook", tone: "green" },

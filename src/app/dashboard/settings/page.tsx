@@ -26,7 +26,7 @@ export default async function SettingsPage() {
   const base = process.env.AUTH_URL ?? `https://${h.get("host")}`;
   const endpoints = [
     { label: "List published", url: `${base}/api/public/content` },
-    { label: "Filter", url: `${base}/api/public/content?type=TUTORIAL&tag=nextjs&limit=10` },
+    { label: "Filter", url: `${base}/api/public/content?type=ARTICLE&tag=nextjs&limit=10` },
     { label: "Single item", url: `${base}/api/public/content/{slug}` },
     { label: "RSS feed", url: `${base}/feed.xml` },
   ];

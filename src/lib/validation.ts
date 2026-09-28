@@ -2,9 +2,9 @@ import { z } from "zod";
 import { parseSubmittedUrl } from "./url";
 
 /** Every content type (filters, stats, public API). */
-export const CONTENT_TYPES = ["BLOG", "TUTORIAL", "ARTICLE", "PROJECT", "NOTEBOOK"] as const;
+export const CONTENT_TYPES = ["BLOG", "ARTICLE", "PROJECT", "NOTEBOOK"] as const;
 /** Types an imported (URL) item can have. NOTEBOOK is only for posts written in the Notebook. */
-export const IMPORT_TYPES = ["BLOG", "TUTORIAL", "ARTICLE", "PROJECT"] as const;
+export const IMPORT_TYPES = ["BLOG", "ARTICLE", "PROJECT"] as const;
 
 const trimmed = (max: number) => z.string().trim().max(max);
 

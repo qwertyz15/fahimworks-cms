@@ -16,7 +16,7 @@ async function profile() {
   const s = await getSettings();
   const name = s.profileName?.trim() || s.siteName;
   const tagline = s.profileTagline?.trim() || null;
-  return { s, name, tagline, description: tagline ?? `Blogs, tutorials, articles, notes and projects by ${name}.` };
+  return { s, name, tagline, description: tagline ?? `Blogs, articles, notes and projects by ${name}.` };
 }
 
 export async function generateMetadata(): Promise<Metadata> {

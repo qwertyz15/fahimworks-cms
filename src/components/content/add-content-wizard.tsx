@@ -24,7 +24,7 @@ export function AddContentWizard() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader title="1. Content URL" description="Paste the link to a post, tutorial, article or project page. It must be publicly reachable." />
+        <CardHeader title="1. Content URL" description="Paste the link to a blog post, article or project page. It must be publicly reachable." />
         <form onSubmit={analyze}>
           <CardContent className="space-y-4">
             {!preview.ok && <FormAlert message={preview.error} />}

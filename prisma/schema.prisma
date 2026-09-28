@@ -26,7 +26,6 @@ enum ContentSource {
 
 enum ContentType {
   BLOG
-  TUTORIAL
   ARTICLE
   PROJECT
   /// Written in the dashboard Notebook (source = WRITTEN). Never used for imported items.

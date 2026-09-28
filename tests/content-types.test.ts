@@ -8,6 +8,10 @@ describe("Notebook is its own type", () => {
     expect(CONTENT_TYPES).toContain("NOTEBOOK");
     expect(IMPORT_TYPES).not.toContain("NOTEBOOK");
   });
+  it("tutorials are gone", () => {
+    expect(CONTENT_TYPES).not.toContain("TUTORIAL");
+    expect(createContentSchema.safeParse({ url: imported.url, type: "TUTORIAL" }).success).toBe(false);
+  });
   it("imported items can't be created or edited as NOTEBOOK", () => {
     expect(createContentSchema.safeParse({ url: imported.url, type: "NOTEBOOK" }).success).toBe(false);
     expect(createContentSchema.safeParse({ url: imported.url, type: "PROJECT" }).success).toBe(true);

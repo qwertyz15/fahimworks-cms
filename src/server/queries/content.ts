@@ -48,7 +48,6 @@ export async function getDashboardStats() {
     total,
     perType,
     blogs: typeCount("BLOG"),
-    tutorials: typeCount("TUTORIAL"),
     articles: typeCount("ARTICLE"),
     projects: typeCount("PROJECT"),
     pendingApprovals: statusCount("AWAITING_APPROVAL"),

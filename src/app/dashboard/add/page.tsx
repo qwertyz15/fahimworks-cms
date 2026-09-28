@@ -9,7 +9,7 @@ export default async function AddContentPage() {
   await requireAdmin();
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <PageHeader title="Add content" description="Import a blog post, tutorial, article or project page you wrote." />
+      <PageHeader title="Add content" description="Import a blog post, article or project page you wrote." />
       <ol className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
         {["Analyze URL", "Review", "Publish"].map((s, i) => (
           <li key={s} className="flex items-center gap-1.5">

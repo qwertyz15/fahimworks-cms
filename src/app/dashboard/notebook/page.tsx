@@ -34,7 +34,7 @@ export default async function NotebookPage({ searchParams }: PageProps<"/dashboa
           <EmptyState
             icon={<NotebookPen />}
             title="Your notebook is empty"
-            description="Start a blog post, tutorial or article. Drafts save automatically while you write."
+            description="Start writing — a note, a post, an idea. Drafts save automatically while you write."
             action={
               <Link href="/dashboard/notebook/new" className={buttonVariants({ size: "sm" })}>
                 <PenLine /> Write your first entry
