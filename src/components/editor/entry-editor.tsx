@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor, type JSONContent } from "@tiptap/react";
-import { AlertCircle, ArrowLeft, ArrowUpRight, Check, EyeOff, Loader2, Send, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowUpRight, Check, EyeOff, ImagePlus, Loader2, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { deleteEntryAction, publishEntryAction, saveEntryAction, unpublishEntryAction } from "@/server/actions/notebook";
 import type { SavedEntry } from "@/server/services/notebook";
@@ -18,6 +18,8 @@ import { useRunAction } from "@/components/use-action-toast";
 import { cn } from "@/lib/utils";
 import { notebookExtensions } from "./extensions";
 import { SelectionToolbar, TableToolbar } from "./toolbars";
+import { PICK_IMAGE_EVENT } from "./slash-menu";
+import { ACCEPTED_IMAGE_TYPES, uploadImage } from "./upload";
 
 export interface EditableEntry {
   id: string;
@@ -28,6 +30,7 @@ export interface EditableEntry {
   slug: string;
   summary: string | null;
   featured: boolean;
+  coverImage: string | null;
   body: JSONContent | null;
   tags: string[];
   updatedAt: string;
@@ -40,7 +43,23 @@ const AUTOSAVE_MS = 10_000;
 const timeFmt = new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit" });
 
 /** `articleBaseUrl`: public address prefix for published entries, e.g. https://timeline.fahimworks.dev/p/ */
-export function EntryEditor({ entry, articleBaseUrl }: { entry: EditableEntry | null; articleBaseUrl: string }) {
+/**
+ * Where to put a block image for a given position: never inside a paragraph
+ * (that would split the sentence) — before the block when at its start,
+ * otherwise right after it.
+ */
+function blockBoundary(doc: import("@tiptap/pm/model").Node, pos: number): number {
+  const $pos = doc.resolve(Math.max(0, Math.min(pos, doc.content.size)));
+  if (!$pos.parent.isTextblock || $pos.depth === 0) return $pos.pos;
+  return $pos.parentOffset === 0 && $pos.parent.content.size > 0 ? $pos.before() : $pos.after();
+}
+
+export interface EditorUploadConfig {
+  enabled: boolean;
+  maxBytes: number;
+}
+
+export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: EditableEntry | null; articleBaseUrl: string; uploads: EditorUploadConfig }) {
   const [id, setId] = useState(entry?.id);
   const [status, setStatus] = useState(entry?.status ?? "DRAFT");
   const [title, setTitle] = useState(entry && entry.title !== "Untitled" ? entry.title : "");
@@ -50,6 +69,12 @@ export function EntryEditor({ entry, articleBaseUrl }: { entry: EditableEntry | 
   const [slug, setSlug] = useState(entry?.slug ?? "");
   const [summary, setSummary] = useState(entry?.summary ?? "");
   const [featured, setFeatured] = useState(entry?.featured ?? false);
+  const [coverImage, setCoverImage] = useState<string | null>(entry?.coverImage ?? null);
+  const [uploading, setUploading] = useState<{ count: number; pct: number } | null>(null);
+  const bodyPicker = useRef<HTMLInputElement>(null);
+  const coverPicker = useRef<HTMLInputElement>(null);
+  // Set below once the editor exists; used by paste/drop handlers created at init.
+  const insertImagesRef = useRef<(files: File[], pos?: number) => void>(() => {});
 
   const [dirty, setDirty] = useState(false);
   const [tick, setTick] = useState(0);
@@ -79,7 +104,25 @@ export function EntryEditor({ entry, articleBaseUrl }: { entry: EditableEntry | 
     extensions,
     content: entry?.body ?? "",
     immediatelyRender: false,
-    editorProps: { attributes: { class: "notebook-editor prose-content", "aria-label": "Entry body" } },
+    editorProps: {
+      attributes: { class: "notebook-editor prose-content", "aria-label": "Entry body" },
+      // Paste or drop image files → upload to storage, then insert.
+      handlePaste: (_view, event) => {
+        const files = [...(event.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+        if (!files.length) return false;
+        event.preventDefault();
+        insertImagesRef.current(files);
+        return true;
+      },
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved) return false;
+        const files = [...(event.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+        if (!files.length) return false;
+        event.preventDefault();
+        insertImagesRef.current(files, view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos);
+        return true;
+      },
+    },
     onUpdate: ({ editor: e }) => {
       setWords((e.storage as { characterCount?: { words: () => number } }).characterCount?.words() ?? 0);
       markDirty();
@@ -87,9 +130,9 @@ export function EntryEditor({ entry, articleBaseUrl }: { entry: EditableEntry | 
   });
 
   // Latest form values for the save function (avoids stale closures).
-  const values = useRef({ id, title, subtitle, type, tags, slug, summary, featured });
+  const values = useRef({ id, title, subtitle, type, tags, slug, summary, featured, coverImage });
   useLayoutEffect(() => {
-    values.current = { id, title, subtitle, type, tags, slug, summary, featured };
+    values.current = { id, title, subtitle, type, tags, slug, summary, featured, coverImage };
   });
 
   type Values = typeof values.current;
@@ -106,6 +149,7 @@ export function EntryEditor({ entry, articleBaseUrl }: { entry: EditableEntry | 
         slug: v.slug,
         summary: v.summary,
         featured: v.featured,
+        coverImage: v.coverImage,
         // Plain JSON only: ProseMirror builds some attrs with Object.create(null), which
         // Server Actions would otherwise send as opaque client references.
         body: JSON.parse(JSON.stringify(editor.getJSON())),
@@ -179,6 +223,60 @@ export function EntryEditor({ entry, articleBaseUrl }: { entry: EditableEntry | 
       toast.error(res.error || "Could not publish.");
     }
   }, [editor, buildPayload, applySaved, articleBaseUrl]);
+
+  /** Upload images one by one and insert each at `pos` (or the cursor). */
+  const insertImages = useCallback(
+    async (files: File[], pos?: number) => {
+      if (!editor) return;
+      if (!uploads.enabled) {
+        toast.error("Image uploads aren't set up yet — add the S3_* variables in Vercel.");
+        return;
+      }
+      let at = blockBoundary(editor.state.doc, pos ?? editor.state.selection.from);
+      for (const [i, file] of files.entries()) {
+        setUploading({ count: files.length - i, pct: 0 });
+        try {
+          const url = await uploadImage(file, { contentId: values.current.id, maxBytes: uploads.maxBytes, onProgress: (pct) => setUploading({ count: files.length - i, pct }) });
+          const alt = file.name.replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " ").trim() || null;
+          const node = { type: "image", attrs: { src: url, alt } };
+          editor.chain().focus().insertContentAt(at, node).run();
+          // Next image goes right after this one.
+          at = blockBoundary(editor.state.doc, editor.state.selection.to);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : "Upload failed.");
+        }
+      }
+      setUploading(null);
+    },
+    [editor, uploads.enabled, uploads.maxBytes],
+  );
+  useLayoutEffect(() => {
+    insertImagesRef.current = (files, pos) => void insertImages(files, pos);
+  });
+
+  // "/image" asks for the file picker.
+  useEffect(() => {
+    const open = () => bodyPicker.current?.click();
+    window.addEventListener(PICK_IMAGE_EVENT, open);
+    return () => window.removeEventListener(PICK_IMAGE_EVENT, open);
+  }, []);
+
+  const uploadCover = async (file: File) => {
+    if (!uploads.enabled) {
+      toast.error("Image uploads aren't set up yet — add the S3_* variables in Vercel.");
+      return;
+    }
+    setUploading({ count: 1, pct: 0 });
+    try {
+      const url = await uploadImage(file, { contentId: values.current.id, maxBytes: uploads.maxBytes, onProgress: (pct) => setUploading({ count: 1, pct }) });
+      setCoverImage(url);
+      markDirty();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setUploading(null);
+    }
+  };
 
   // Autosave drafts shortly after typing stops. Published entries save only on demand.
   useEffect(() => {
@@ -256,6 +354,11 @@ export function EntryEditor({ entry, articleBaseUrl }: { entry: EditableEntry | 
         <span className="text-xs text-muted-foreground" aria-live="polite">
           {saveState}
         </span>
+        {uploading && (
+          <span className="inline-flex items-center gap-1.5 text-xs text-primary" role="status">
+            <Loader2 className="size-3.5 animate-spin" /> Uploading{uploading.count > 1 ? ` ${uploading.count} images` : " image"}… {uploading.pct}%
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <span className="hidden text-xs text-muted-foreground sm:inline">
             {words.toLocaleString()} words · {Math.max(words ? 1 : 0, Math.round(words / 230))} min read
@@ -342,6 +445,64 @@ export function EntryEditor({ entry, articleBaseUrl }: { entry: EditableEntry | 
 
         {/* Side panel */}
         <aside className="space-y-5 lg:sticky lg:top-20 lg:self-start">
+          <input
+            ref={bodyPicker}
+            type="file"
+            accept={ACCEPTED_IMAGE_TYPES.join(",")}
+            multiple
+            hidden
+            onChange={(e) => {
+              const files = [...(e.target.files ?? [])];
+              e.target.value = "";
+              if (files.length) void insertImages(files);
+            }}
+          />
+          <input
+            ref={coverPicker}
+            type="file"
+            accept={ACCEPTED_IMAGE_TYPES.join(",")}
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void uploadCover(file);
+            }}
+          />
+          <div className="space-y-1.5">
+            <span className="text-[13px] font-medium">Cover image</span>
+            {coverImage ? (
+              <div className="space-y-2">
+                {/* eslint-disable-next-line @next/next/no-img-element -- media bucket image */}
+                <img src={coverImage} alt="Cover" className="aspect-[16/9] w-full rounded-lg border object-cover" />
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => coverPicker.current?.click()} disabled={!!uploading}>
+                    Replace
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setCoverImage(null);
+                      markDirty();
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => coverPicker.current?.click()}
+                disabled={!!uploading}
+                className="flex aspect-[16/9] w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground disabled:opacity-50"
+              >
+                <ImagePlus className="size-5" />
+                {uploads.enabled ? "Upload cover image" : "Uploads not configured"}
+              </button>
+            )}
+            <p className="text-xs text-muted-foreground">Shown on the timeline and at the top of the article. Without one, the first image is used on the timeline.</p>
+          </div>
           <Field id="entry-type" label="Type">
             <Select id="entry-type" value={type} onChange={(e) => field(setType)(e.target.value)}>
               {TYPE_ORDER.map((t) => (

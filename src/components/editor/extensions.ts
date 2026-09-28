@@ -7,6 +7,7 @@ import { CharacterCount, Placeholder } from "@tiptap/extensions";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { common, createLowlight } from "lowlight";
 import { CodeBlockView } from "./code-block-view";
+import { Figure } from "./figure";
 import { SlashCommand } from "./slash-menu";
 
 export const lowlight = createLowlight(common);
@@ -30,6 +31,7 @@ export function notebookExtensions() {
       },
     }).configure({ lowlight, defaultLanguage: "plaintext" }),
     TableKit.configure({ table: { resizable: false } }),
+    Figure,
     Placeholder.configure({
       placeholder: ({ node }) => (node.type.name === "heading" ? "Heading" : "Write, or type '/' for blocks…"),
     }),

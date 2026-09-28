@@ -104,8 +104,8 @@ export default async function ArticlePage({ params }: PageProps<"/timeline/p/[sl
           </div>
         </header>
 
-        {article.thumbnail && (
-          <img src={article.thumbnail} alt="" referrerPolicy="no-referrer" className="mb-10 aspect-[16/9] w-full rounded-2xl border object-cover shadow-card" />
+        {article.coverImage && (
+          <img src={article.coverImage} alt="" referrerPolicy="no-referrer" className="mb-10 aspect-[16/9] w-full rounded-2xl border object-cover shadow-card" />
         )}
 
         {/* contentHtml is sanitised with a strict allowlist on every save (services/notebook-html.ts). */}

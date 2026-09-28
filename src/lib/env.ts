@@ -16,6 +16,15 @@ const schema = z.object({
   FETCH_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(10000),
   FETCH_MAX_BYTES: z.coerce.number().int().min(64 * 1024).max(50 * 1024 * 1024).default(5 * 1024 * 1024),
   FETCH_USER_AGENT: z.string().default("PortfolioCMS/1.0 (+content import)"),
+  // Object storage for Notebook images (Cloudflare R2 / MinIO / S3). Uploads are
+  // disabled unless endpoint, bucket, both keys and the public URL are set.
+  S3_ENDPOINT: z.string().optional().default(""),
+  S3_REGION: z.string().optional().default("auto"),
+  S3_BUCKET: z.string().optional().default(""),
+  S3_ACCESS_KEY_ID: z.string().optional().default(""),
+  S3_SECRET_ACCESS_KEY: z.string().optional().default(""),
+  S3_PUBLIC_URL: z.string().optional().default(""),
+  UPLOAD_MAX_BYTES: z.coerce.number().int().min(100 * 1024).max(50 * 1024 * 1024).default(10 * 1024 * 1024),
 });
 
 export type Env = z.infer<typeof schema>;

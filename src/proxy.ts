@@ -13,6 +13,15 @@ import { isTimelineHost } from "@/lib/timeline";
  *  3. Per-request CSP nonce so only our own scripts execute.
  */
 
+/** Origin of an env URL, or "" (used to allow direct browser uploads to / images from object storage). */
+function envOrigin(name: string): string {
+  try {
+    return process.env[name] ? new URL(process.env[name]!).origin : "";
+  } catch {
+    return "";
+  }
+}
+
 function withCsp(req: NextRequest, rewriteTo?: URL) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const dev = process.env.NODE_ENV !== "production";
@@ -21,9 +30,10 @@ function withCsp(req: NextRequest, rewriteTo?: URL) {
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' https: data: blob:",
+    `img-src 'self' https: data: blob:${envOrigin("S3_PUBLIC_URL") ? ` ${envOrigin("S3_PUBLIC_URL")}` : ""}`,
     "font-src 'self' data:",
-    `connect-src 'self'${dev ? " ws: wss:" : ""}`,
+    // Notebook images are PUT straight to the storage endpoint (presigned URLs).
+    `connect-src 'self'${envOrigin("S3_ENDPOINT") ? ` ${envOrigin("S3_ENDPOINT")}` : ""}${dev ? " ws: wss:" : ""}`,
     "frame-ancestors 'none'",
     "frame-src 'none'",
     "object-src 'none'",

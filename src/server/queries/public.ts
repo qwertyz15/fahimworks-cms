@@ -17,6 +17,7 @@ export const publicSelect = {
   description: true,
   summary: true,
   thumbnail: true,
+  coverImage: true,
   author: true,
   publishDate: true,
   publishedAt: true,

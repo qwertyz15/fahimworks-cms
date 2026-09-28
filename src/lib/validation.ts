@@ -172,6 +172,7 @@ export const saveEntrySchema = z.object({
     .default(null),
   summary: trimmed(1000).transform((v) => v || null).nullable().default(null),
   featured: z.boolean().default(false),
+  coverImage: z.string().trim().max(2048).nullable().default(null),
   body: z
     .record(z.string(), z.unknown())
     .refine((v) => v.type === "doc", "Invalid editor document.")

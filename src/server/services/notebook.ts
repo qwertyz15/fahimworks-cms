@@ -7,7 +7,9 @@ import { audit } from "./audit";
 import { tagConnect, uniqueSlug } from "./content-helpers";
 import { ContentError } from "./content";
 import { transition, WorkflowError } from "./workflow";
-import { deriveFields, renderNotebookHtml } from "./notebook-html";
+import { deriveFields, imageSources, renderNotebookHtml } from "./notebook-html";
+import { cleanupUnusedAssets, linkAssets } from "./assets";
+import { storagePublicOrigin } from "@/lib/storage";
 
 /**
  * Notebook: posts written in the dashboard editor (source = WRITTEN).
@@ -24,6 +26,8 @@ export interface SaveEntryInput {
   slug: string | null;
   summary: string | null;
   featured: boolean;
+  /** Chosen cover image URL (null = none; the first image is used as the thumbnail). */
+  coverImage: string | null;
   /** Tiptap JSON document. */
   body: Prisma.InputJsonValue;
   /** Editor HTML — untrusted, re-sanitised here. */
@@ -56,7 +60,9 @@ async function resolveSlug(requested: string | null, title: string, existing?: {
 
 export async function saveEntry(input: SaveEntryInput, actorId: string): Promise<SavedEntry> {
   const title = input.title.trim() || UNTITLED;
-  const contentHtml = renderNotebookHtml(input.html);
+  const origin = storagePublicOrigin();
+  const contentHtml = renderNotebookHtml(input.html, { imageOrigins: origin ? [origin] : [] });
+  const coverImage = safeImageUrl(input.coverImage, origin);
   const derived = deriveFields(contentHtml);
 
   const data = {
@@ -69,7 +75,8 @@ export async function saveEntry(input: SaveEntryInput, actorId: string): Promise
     wordCount: derived.wordCount,
     readingMinutes: derived.readingMinutes,
     summary: input.summary?.trim() || derived.autoSummary,
-    thumbnail: derived.firstImage,
+    coverImage,
+    thumbnail: coverImage ?? derived.firstImage,
     featured: input.featured,
   } satisfies Prisma.ContentUpdateInput;
 
@@ -85,6 +92,7 @@ export async function saveEntry(input: SaveEntryInput, actorId: string): Promise
       },
     });
     await audit({ actorId, action: "content.created", targetType: "content", targetId: created.id, metadata: { source: "WRITTEN" } });
+    await linkAssets(created.id, [...imageSources(contentHtml), ...(coverImage ? [coverImage] : [])]);
     return toSaved(created);
   }
 
@@ -99,8 +107,20 @@ export async function saveEntry(input: SaveEntryInput, actorId: string): Promise
       tags: { set: [], connectOrCreate: tagConnect(input.tags) },
     },
   });
+  await linkAssets(updated.id, [...imageSources(contentHtml), ...(coverImage ? [coverImage] : [])]);
   // Autosave runs every few seconds — deliberately not audited per save.
   return toSaved(updated);
+}
+
+/** Accept only https URLs (or the storage origin, e.g. local MinIO) as cover images. */
+function safeImageUrl(url: string | null, storageOrigin: string | null): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || u.origin === storageOrigin ? u.href : null;
+  } catch {
+    return null;
+  }
 }
 
 function toSaved(row: { id: string; slug: string; status: string; updatedAt: Date; wordCount: number | null; readingMinutes: number | null }): SavedEntry {
@@ -117,7 +137,10 @@ function toSaved(row: { id: string; slug: string; status: string; updatedAt: Dat
 export async function deleteEntry(id: string, actorId: string) {
   const entry = await db.content.findUnique({ where: { id }, select: { id: true, title: true, source: true } });
   if (!entry || entry.source !== "WRITTEN") throw new ContentError("Notebook entry not found.");
+  const assetIds = (await db.asset.findMany({ where: { contentId: id }, select: { id: true } })).map((a) => a.id);
   await db.content.delete({ where: { id } });
+  // Remove its images from storage right away (unless another entry uses them).
+  if (assetIds.length) await cleanupUnusedAssets({ ids: assetIds, minAgeMs: 0 }).catch((err) => console.error("[notebook] image cleanup failed", err));
   await audit({ actorId, action: "content.deleted", targetType: "content", targetId: id, metadata: { title: entry.title, source: "WRITTEN" } });
 }
 

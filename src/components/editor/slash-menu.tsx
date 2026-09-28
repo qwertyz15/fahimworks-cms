@@ -5,10 +5,13 @@ import { Extension, type Editor, type Range } from "@tiptap/core";
 import { ReactRenderer } from "@tiptap/react";
 import Suggestion, { type SuggestionKeyDownProps, type SuggestionProps } from "@tiptap/suggestion";
 import { computePosition, flip, offset, shift } from "@floating-ui/dom";
-import { Code2, Heading1, Heading2, Heading3, List, ListOrdered, Minus, Pilcrow, Quote, Table, type LucideIcon } from "lucide-react";
+import { Code2, Heading1, Heading2, Heading3, ImagePlus, List, ListOrdered, Minus, Pilcrow, Quote, Table, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** The "/" command menu: type "/" in the editor to insert a block. */
+
+/** Fired by the "/image" command; EntryEditor opens its file picker. */
+export const PICK_IMAGE_EVENT = "notebook:pick-image";
 
 export interface SlashItem {
   title: string;
@@ -33,6 +36,17 @@ export const SLASH_ITEMS: SlashItem[] = [
     icon: Table,
     keywords: ["grid", "columns", "rows"],
     run: (e, r) => e.chain().focus().deleteRange(r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+  },
+  {
+    title: "Image",
+    description: "Upload a picture (or paste / drop one)",
+    icon: ImagePlus,
+    keywords: ["img", "picture", "photo", "upload", "screenshot"],
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).run();
+      // The editor page owns the file picker; ask it to open.
+      window.dispatchEvent(new CustomEvent(PICK_IMAGE_EVENT));
+    },
   },
   { title: "Divider", description: "Horizontal line", icon: Minus, keywords: ["hr", "line", "separator"], run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run() },
 ];

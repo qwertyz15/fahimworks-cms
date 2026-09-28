@@ -22,6 +22,7 @@ const OPTIONS: sanitizeHtml.IOptions = {
   allowedAttributes: {
     a: ["href", "title", "target", "rel"],
     img: ["src", "alt", "title", "width", "height", "loading", "referrerpolicy"],
+    figcaption: [],
     code: ["class"],
     pre: ["class"],
     span: ["class"],
@@ -36,7 +37,9 @@ const OPTIONS: sanitizeHtml.IOptions = {
     span: [/^hljs(-[\w-]+)?$/],
   },
   allowedSchemes: ["https", "http", "mailto"],
-  allowedSchemesByTag: { img: ["https"] },
+  // http is allowed here only so the transform below can keep http images from the
+  // configured storage origin (local MinIO); every other http image is dropped.
+  allowedSchemesByTag: { img: ["https", "http"] },
   allowProtocolRelative: false,
   transformTags: {
     a: (tagName, attribs) => ({
@@ -48,8 +51,31 @@ const OPTIONS: sanitizeHtml.IOptions = {
   exclusiveFilter: (frame) => frame.tag === "img" && !frame.attribs.src,
 };
 
-export function sanitizeNotebookHtml(html: string): string {
-  return sanitizeHtml(html, OPTIONS).trim();
+export interface SanitizeOptions {
+  /** Extra origins allowed for <img> even over http (e.g. the local storage server). */
+  imageOrigins?: string[];
+}
+
+export function sanitizeNotebookHtml(html: string, opts: SanitizeOptions = {}): string {
+  const allowed = new Set(opts.imageOrigins ?? []);
+  return sanitizeHtml(html, {
+    ...OPTIONS,
+    transformTags: {
+      ...OPTIONS.transformTags,
+      img: (tagName, attribs) => {
+        let src = attribs.src ?? "";
+        try {
+          const u = new URL(src);
+          if (u.protocol !== "https:" && !allowed.has(u.origin)) src = "";
+        } catch {
+          src = "";
+        }
+        const { src: _drop, ...rest } = attribs;
+        void _drop;
+        return { tagName, attribs: { ...rest, ...(src ? { src } : {}), loading: "lazy", referrerpolicy: "no-referrer" } };
+      },
+    },
+  }).trim();
 }
 
 // ── Server-side syntax highlighting ──
@@ -85,8 +111,17 @@ export function highlightCodeBlocks(cleanHtml: string): string {
 }
 
 /** Full pipeline for a save: sanitise → highlight → sanitise again (defence in depth). */
-export function renderNotebookHtml(editorHtml: string): string {
-  return sanitizeNotebookHtml(highlightCodeBlocks(sanitizeNotebookHtml(editorHtml)));
+export function renderNotebookHtml(editorHtml: string, opts: SanitizeOptions = {}): string {
+  return sanitizeNotebookHtml(highlightCodeBlocks(sanitizeNotebookHtml(editorHtml, opts)), opts);
+}
+
+/** Every image src in (sanitised) HTML. */
+export function imageSources(cleanHtml: string): string[] {
+  const $ = cheerio.load(cleanHtml, null, false);
+  return $("img")
+    .map((_, el) => $(el).attr("src") ?? "")
+    .get()
+    .filter(Boolean);
 }
 
 export interface DerivedFields {

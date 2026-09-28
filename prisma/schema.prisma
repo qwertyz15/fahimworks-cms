@@ -82,6 +82,7 @@ model User {
 
   contents  Content[]
   auditLogs AuditLog[]
+  assets    Asset[]
 
   @@map("users")
 }
@@ -100,6 +101,8 @@ model Content {
   normalizedUrl String?     @unique @map("normalized_url")
   /// Optional subtitle shown under the title (Notebook entries).
   subtitle      String?
+  /// Cover image chosen for a Notebook entry (shown atop the article). Falls back to the first image for `thumbnail`.
+  coverImage    String?     @map("cover_image")
   type          ContentType
   description   String?
   thumbnail     String?
@@ -146,6 +149,7 @@ model Content {
   authorRef User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
   tags      Tag[]
   verificationTokens VerificationToken[]
+  assets             Asset[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -157,6 +161,27 @@ model Content {
   @@index([contentHash])
   @@index([authorId])
   @@map("contents")
+}
+
+/// An image uploaded to object storage (Cloudflare R2) from the Notebook editor.
+model Asset {
+  id           String   @id @default(cuid())
+  /// Object key in the bucket, e.g. posts/2026/09/ab12cd34-diagram.png
+  key          String   @unique
+  url          String
+  contentType  String   @map("content_type")
+  size         Int
+  filename     String?
+  /// The entry that uses it (set on save). Null = not (yet) used by any entry.
+  contentId    String?  @map("content_id")
+  content      Content? @relation(fields: [contentId], references: [id], onDelete: SetNull)
+  uploadedById String   @map("uploaded_by_id")
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([contentId])
+  @@index([createdAt])
+  @@map("assets")
 }
 
 model Tag {

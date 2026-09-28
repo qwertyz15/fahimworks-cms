@@ -214,6 +214,7 @@ export async function getNotebookEntry(id: string) {
       slug: true,
       summary: true,
       featured: true,
+      coverImage: true,
       body: true,
       contentHtml: true,
       wordCount: true,

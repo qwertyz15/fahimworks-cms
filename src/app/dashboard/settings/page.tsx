@@ -10,6 +10,9 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/server/auth/guards";
 import { getSettings } from "@/server/services/settings";
 import { timelineUrl } from "@/lib/timeline";
+import { ImagesCard } from "@/components/settings/images-card";
+import { storagePublicOrigin, uploadsEnabled } from "@/lib/storage";
+import { assetStats } from "@/server/services/assets";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -52,6 +55,8 @@ export default async function SettingsPage() {
         }}
         timelineUrl={timelineUrl()}
       />
+
+      <ImagesCard enabled={uploadsEnabled()} publicUrl={storagePublicOrigin()} {...(await assetStats())} />
 
       <Card>
         <CardHeader title="Portfolio integration" description="Read-only endpoints your portfolio site can consume. Only published items are exposed." />

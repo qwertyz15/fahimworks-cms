@@ -425,3 +425,28 @@
 .notebook-editor :is(td, th) p:empty::after {
   content: "\00a0";
 }
+
+/* ── Images (Notebook figures) ─────────────────────────────────── */
+.prose-content figure,
+.notebook-figure {
+  margin: 1.6em 0;
+}
+.prose-content figure img,
+.notebook-figure img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  border-radius: 0.6rem;
+}
+.prose-content figcaption,
+.notebook-figure figcaption {
+  margin-top: 0.6em;
+  font-size: 0.85rem;
+  color: var(--color-muted-foreground);
+  text-align: center;
+}
+.notebook-figure.is-selected img {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 3px;
+}

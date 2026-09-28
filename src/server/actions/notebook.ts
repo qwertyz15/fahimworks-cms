@@ -7,6 +7,10 @@ import { idSchema, saveEntrySchema } from "@/lib/validation";
 import { TIMELINE_TAG } from "@/server/queries/public";
 import { deleteEntry, publishEntry, saveEntry, unpublishEntry, type SavedEntry } from "@/server/services/notebook";
 import { adminAction, type ActionResult } from "./result";
+import { z } from "zod";
+import { RATE_LIMITS } from "@/lib/rate-limit";
+import { presignImageUpload, type PresignedUpload } from "@/lib/storage";
+import { cleanupUnusedAssets, recordAsset } from "@/server/services/assets";
 
 /** Validate a save payload and store it; returns the saved entry or an error message. */
 async function saveFromPayload(payload: unknown, userId: string): Promise<SavedEntry | string> {
@@ -70,4 +74,43 @@ export async function deleteEntryAction(entryId: string): Promise<ActionResult> 
   revalidatePath("/dashboard", "layout");
   updateTag(TIMELINE_TAG);
   redirect("/dashboard/notebook?deleted=1");
+}
+
+const uploadSchema = z.object({
+  filename: z.string().trim().min(1).max(200),
+  contentType: z.string().max(100),
+  size: z.number().int().positive(),
+  contentId: z.string().min(1).max(64).nullable().optional(),
+});
+
+/** A 5-minute signed upload URL for one image (admin only, rate limited). */
+export async function createImageUploadAction(payload: unknown): Promise<ActionResult<PresignedUpload>> {
+  return adminAction(
+    async (user) => {
+      const input = uploadSchema.parse(payload);
+      const upload = await presignImageUpload(input);
+      await recordAsset({
+        key: upload.key,
+        url: upload.publicUrl,
+        contentType: input.contentType,
+        size: input.size,
+        filename: input.filename,
+        uploadedById: user.id,
+        contentId: input.contentId ?? null,
+      });
+      return { ok: true, data: upload };
+    },
+    { rateLimit: { key: "upload", rule: RATE_LIMITS.upload } },
+  );
+}
+
+/** Settings → "Remove unused images": deletes uploads no entry uses (older than 1 hour). */
+export async function cleanupImagesAction(): Promise<ActionResult> {
+  return adminAction(async () => {
+    const { deleted, bytes } = await cleanupUnusedAssets({ minAgeMs: 60 * 60 * 1000 });
+    return {
+      ok: true,
+      message: deleted ? `Removed ${deleted} unused image${deleted === 1 ? "" : "s"} (${(bytes / (1024 * 1024)).toFixed(1)} MB).` : "No unused images to remove.",
+    };
+  });
 }

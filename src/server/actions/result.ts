@@ -7,6 +7,7 @@ import { fieldErrors } from "@/lib/validation";
 import { AuthorizationError, requireAdmin, type SessionUser } from "@/server/auth/guards";
 import { ContentError } from "@/server/services/content";
 import { WorkflowError } from "@/server/services/workflow";
+import { StorageError } from "@/lib/storage";
 
 export type ActionResult<T = undefined> =
   | { ok: true; message?: string; data?: T }
@@ -14,7 +15,7 @@ export type ActionResult<T = undefined> =
 
 export const idle: ActionResult<never> = { ok: false, error: "" };
 
-const EXPECTED = [AuthorizationError, RateLimitError, ContentError, WorkflowError, SafeFetchError];
+const EXPECTED = [AuthorizationError, RateLimitError, ContentError, WorkflowError, SafeFetchError, StorageError];
 
 export function toActionError(err: unknown): ActionResult<never> {
   unstable_rethrow(err); // let redirect()/notFound() propagate
