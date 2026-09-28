@@ -75,5 +75,5 @@ export default function proxy(req: NextRequest, event: NextFetchEvent) {
 }
 
 export const config = {
-  matcher: ["/((?!api/public|api/health|feed.xml|_next/static|_next/image|favicon.ico|icon.svg|robots.txt).*)"],
+  matcher: ["/((?!api/public|api/health|feed.xml|_next/static|_next/image|favicon.ico|icon.svg|apple-icon.png|robots.txt).*)"],
 };
