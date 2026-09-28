@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowUpRight, Clock3 } from "lucide-react";
 import { Brand } from "@/components/brand";
 import { MobileNav, NavLinks } from "@/components/dashboard/nav";
 import { UserMenu } from "@/components/dashboard/user-menu";
@@ -6,6 +7,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/server/auth/guards";
 import { getSettings } from "@/server/services/settings";
+import { timelineUrl } from "@/lib/timeline";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAdmin();
@@ -16,7 +18,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <Link href="/dashboard" className="px-1.5">
         <Brand name={settings.siteName} />
       </Link>
-      <NavLinks pendingCount={pendingCount} />
+      <div className="space-y-3">
+        <NavLinks pendingCount={pendingCount} />
+        {settings.timelineEnabled && (
+          <a
+            href={timelineUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          >
+            <Clock3 className="size-4" />
+            <span className="flex-1">Public timeline</span>
+            <ArrowUpRight className="size-3.5" />
+          </a>
+        )}
+      </div>
       <div className="mt-auto space-y-3">
         <div className="flex items-center justify-between px-1.5">
           <span className="text-xs text-muted-foreground">Theme</span>

@@ -9,6 +9,7 @@ import { formatDateTime } from "@/lib/utils";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/server/auth/guards";
 import { getSettings } from "@/server/services/settings";
+import { timelineUrl } from "@/lib/timeline";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -39,7 +40,17 @@ export default async function SettingsPage() {
           allowRegistration: settings.allowRegistration,
           publicApiEnabled: settings.publicApiEnabled,
           allowedOrigins: settings.allowedOrigins,
+          timelineEnabled: settings.timelineEnabled,
+          timelineIndexable: settings.timelineIndexable,
+          profileName: settings.profileName,
+          profileTagline: settings.profileTagline,
+          profileGithub: settings.profileGithub,
+          profileLinkedin: settings.profileLinkedin,
+          profileX: settings.profileX,
+          profileWebsite: settings.profileWebsite,
+          profileEmail: settings.profileEmail,
         }}
+        timelineUrl={timelineUrl()}
       />
 
       <Card>

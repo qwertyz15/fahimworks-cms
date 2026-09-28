@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { toast } from "sonner";
+import { ArrowUpRight } from "lucide-react";
 import { updateSettingsAction } from "@/server/actions/settings";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Field, FormAlert } from "@/components/ui/field";
@@ -17,6 +18,15 @@ export interface SettingsValues {
   allowRegistration: boolean;
   publicApiEnabled: boolean;
   allowedOrigins: string[];
+  timelineEnabled: boolean;
+  timelineIndexable: boolean;
+  profileName: string | null;
+  profileTagline: string | null;
+  profileGithub: string | null;
+  profileLinkedin: string | null;
+  profileX: string | null;
+  profileWebsite: string | null;
+  profileEmail: string | null;
 }
 
 function ToggleRow({ name, title, description, defaultChecked, warn }: { name: string; title: string; description: string; defaultChecked: boolean; warn?: string }) {
@@ -32,7 +42,7 @@ function ToggleRow({ name, title, description, defaultChecked, warn }: { name: s
   );
 }
 
-export function SettingsForm({ values }: { values: SettingsValues }) {
+export function SettingsForm({ values, timelineUrl }: { values: SettingsValues; timelineUrl: string }) {
   const { state, onSubmit, pending, errors } = useFormAction(updateSettingsAction);
   useEffect(() => {
     if (state.ok && state.message) toast.success(state.message);
@@ -61,6 +71,54 @@ export function SettingsForm({ values }: { values: SettingsValues }) {
           <Field id="minWordCount" label="Minimum word count" error={errors?.minWordCount} hint="Pages with less readable text are rejected. Projects use one third of this.">
             <Input id="minWordCount" name="minWordCount" type="number" min={20} max={5000} defaultValue={values.minWordCount} />
           </Field>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Public timeline"
+          description="A read-only page showing all your published work, newest first. Visitors can't log in or change anything."
+          action={
+            <a href={timelineUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[13px] font-medium text-primary hover:underline">
+              Open <ArrowUpRight className="size-3.5" />
+            </a>
+          }
+        />
+        <CardContent className="space-y-5">
+          <div className="divide-y">
+            <ToggleRow name="timelineEnabled" title="Show public timeline" description={`Visible at ${timelineUrl.replace(/^https?:\/\//, "")}. When off, the page returns "Not found".`} defaultChecked={values.timelineEnabled} />
+            <ToggleRow
+              name="timelineIndexable"
+              title="Let search engines index it"
+              description="Off = unlisted: anyone with the link can view it, but Google won't list it."
+              defaultChecked={values.timelineIndexable}
+            />
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field id="profileName" label="Name" error={errors?.profileName} hint="Shown as the page title. Defaults to the site name.">
+              <Input id="profileName" name="profileName" defaultValue={values.profileName ?? ""} maxLength={100} placeholder="Fahim Shahriar" />
+            </Field>
+            <Field id="profileTagline" label="One-line intro" error={errors?.profileTagline}>
+              <Input id="profileTagline" name="profileTagline" defaultValue={values.profileTagline ?? ""} maxLength={200} placeholder="Software engineer writing about AI systems and the web." />
+            </Field>
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field id="profileGithub" label="GitHub" error={errors?.profileGithub}>
+              <Input id="profileGithub" name="profileGithub" type="url" defaultValue={values.profileGithub ?? ""} placeholder="https://github.com/qwertyz15" />
+            </Field>
+            <Field id="profileLinkedin" label="LinkedIn" error={errors?.profileLinkedin}>
+              <Input id="profileLinkedin" name="profileLinkedin" type="url" defaultValue={values.profileLinkedin ?? ""} placeholder="https://www.linkedin.com/in/…" />
+            </Field>
+            <Field id="profileX" label="X (Twitter)" error={errors?.profileX}>
+              <Input id="profileX" name="profileX" type="url" defaultValue={values.profileX ?? ""} placeholder="https://x.com/…" />
+            </Field>
+            <Field id="profileWebsite" label="Website" error={errors?.profileWebsite}>
+              <Input id="profileWebsite" name="profileWebsite" type="url" defaultValue={values.profileWebsite ?? ""} placeholder="https://fahimworks.dev" />
+            </Field>
+            <Field id="profileEmail" label="Email" error={errors?.profileEmail} hint="Shown as a mailto: link. Leave empty to hide.">
+              <Input id="profileEmail" name="profileEmail" type="email" defaultValue={values.profileEmail ?? ""} placeholder="you@example.com" />
+            </Field>
+          </div>
         </CardContent>
       </Card>
 

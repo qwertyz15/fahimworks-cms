@@ -1,12 +1,13 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { signOut } from "@/auth";
 import { db } from "@/lib/db";
 import { changePasswordSchema, settingsSchema } from "@/lib/validation";
 import { hashPassword, verifyPassword } from "@/server/auth/password";
 import { audit } from "@/server/services/audit";
+import { TIMELINE_TAG } from "@/server/queries/public";
 import { adminAction, formString, type ActionResult } from "./result";
 import { RATE_LIMITS } from "@/lib/rate-limit";
 
@@ -19,11 +20,22 @@ export async function updateSettingsAction(_prev: ActionResult, form: FormData):
       allowRegistration: formString(form, "allowRegistration") === "on",
       publicApiEnabled: formString(form, "publicApiEnabled") === "on",
       allowedOrigins: formString(form, "allowedOrigins"),
+      timelineEnabled: formString(form, "timelineEnabled") === "on",
+      timelineIndexable: formString(form, "timelineIndexable") === "on",
+      profileName: formString(form, "profileName"),
+      profileTagline: formString(form, "profileTagline"),
+      profileGithub: formString(form, "profileGithub"),
+      profileLinkedin: formString(form, "profileLinkedin"),
+      profileX: formString(form, "profileX"),
+      profileWebsite: formString(form, "profileWebsite"),
+      profileEmail: formString(form, "profileEmail"),
     });
     const allowedOrigins = input.allowedOrigins.map((o) => new URL(o).origin);
     await db.systemSettings.update({ where: { id: 1 }, data: { ...input, allowedOrigins } });
     await audit({ actorId: user.id, action: "settings.updated", targetType: "settings", metadata: { ...input, allowedOrigins } });
     revalidatePath("/dashboard", "layout");
+    revalidatePath("/timeline");
+    updateTag(TIMELINE_TAG);
     return { ok: true, message: "Settings saved." };
   });
 }

@@ -7,8 +7,8 @@ export default function NotFound() {
       <p className="font-mono text-sm text-muted-foreground">404</p>
       <h1 className="text-xl font-semibold">Page not found</h1>
       <p className="text-sm text-muted-foreground">The page you are looking for does not exist or was removed.</p>
-      <Link href="/dashboard" className={buttonVariants({ variant: "outline", size: "sm", className: "mt-2" })}>
-        Back to dashboard
+      <Link href="/" className={buttonVariants({ variant: "outline", size: "sm", className: "mt-2" })}>
+        Go home
       </Link>
     </main>
   );

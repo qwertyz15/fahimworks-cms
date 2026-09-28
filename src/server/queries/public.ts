@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ContentType } from "@/generated/prisma/enums";
@@ -45,3 +46,20 @@ export async function listPublished(opts: { type?: ContentType; tag?: string; fe
 export function getPublishedBySlug(slug: string) {
   return db.content.findFirst({ where: { slug, status: "PUBLISHED" }, select: publicSelect });
 }
+
+export const TIMELINE_TAG = "timeline";
+
+/** Everything the public timeline shows. Cached; invalidated by updateTag(TIMELINE_TAG) on changes. */
+export const getTimelineItems = unstable_cache(
+  async () =>
+    db.content.findMany({
+      where: { status: "PUBLISHED" },
+      select: publicSelect,
+      orderBy: [{ publishDate: { sort: "desc", nulls: "last" } }, { publishedAt: "desc" }, { id: "desc" }],
+      take: 500,
+    }),
+  ["timeline-items"],
+  { tags: [TIMELINE_TAG], revalidate: 3600 },
+);
+
+export type TimelineItem = Awaited<ReturnType<typeof getTimelineItems>>[number];

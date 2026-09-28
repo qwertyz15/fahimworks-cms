@@ -20,6 +20,13 @@ You paste a URL, the system analyzes it (preview, duplicate check, content check
 
 Only the signed-in admin can add content, so there is no per-URL ownership check.
 
+## Public timeline
+
+A read-only page listing every **published** item, grouped by year, with type filters and a featured section.
+It lives at `/timeline`, and on its own domain when `TIMELINE_HOST` is set (e.g. `timeline.fahimworks.dev`);
+that domain serves only the timeline and returns 404 for everything else. Name, intro line, profile links,
+on/off and search-engine visibility (unlisted by default) are in **Settings → Public timeline**.
+
 ## Local development
 
 Prerequisites: Node.js ≥ 20.19, and PostgreSQL (or Docker).

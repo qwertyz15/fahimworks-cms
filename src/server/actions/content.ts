@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { RATE_LIMITS } from "@/lib/rate-limit";
@@ -17,10 +17,13 @@ import {
   type UrlPreview,
 } from "@/server/services/content";
 import { runExtraction } from "@/server/services/extraction";
+import { TIMELINE_TAG } from "@/server/queries/public";
 import { adminAction, formString, type ActionResult } from "./result";
 
 function refresh(id?: string) {
   revalidatePath("/dashboard", "layout");
+  // Any content change may affect the public timeline.
+  updateTag(TIMELINE_TAG);
   if (id) revalidatePath(`/dashboard/content/${id}`);
 }
 

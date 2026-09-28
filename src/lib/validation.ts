@@ -124,6 +124,22 @@ export const settingsSchema = z.object({
         .filter(Boolean),
     )
     .pipe(z.array(z.url({ protocol: /^https?$/, message: "Each origin must be a valid http(s) origin." })).max(20)),
+  // Public timeline
+  timelineEnabled: z.coerce.boolean(),
+  timelineIndexable: z.coerce.boolean(),
+  profileName: trimmed(100).transform((v) => v || null).nullable(),
+  profileTagline: trimmed(200).transform((v) => v || null).nullable(),
+  profileGithub: optionalUrl,
+  profileLinkedin: optionalUrl,
+  profileX: optionalUrl,
+  profileWebsite: optionalUrl,
+  profileEmail: z
+    .string()
+    .trim()
+    .max(254)
+    .transform((v) => v || null)
+    .refine((v) => v === null || z.email().safeParse(v).success, "Enter a valid email address.")
+    .nullable(),
 });
 
 export const idSchema = z.string().min(1).max(64);

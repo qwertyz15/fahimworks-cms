@@ -189,6 +189,18 @@ model SystemSettings {
   publicApiEnabled  Boolean  @default(true) @map("public_api_enabled")
   /// Origins allowed to call the public API from a browser (CORS).
   allowedOrigins    String[] @default([]) @map("allowed_origins")
+
+  // Public timeline page (timeline.fahimworks.dev / /timeline)
+  timelineEnabled   Boolean  @default(true) @map("timeline_enabled")
+  /// false = unlisted (noindex); true = search engines may index the page.
+  timelineIndexable Boolean  @default(false) @map("timeline_indexable")
+  profileName       String?  @map("profile_name")
+  profileTagline    String?  @map("profile_tagline")
+  profileGithub     String?  @map("profile_github")
+  profileLinkedin   String?  @map("profile_linkedin")
+  profileX          String?  @map("profile_x")
+  profileWebsite    String?  @map("profile_website")
+  profileEmail      String?  @map("profile_email")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
   @@map("system_settings")
