@@ -10,6 +10,8 @@ import { CodeBlockView } from "./code-block-view";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Details, DetailsContent, DetailsSummary } from "@tiptap/extension-details";
 import { mathExtensions } from "./math";
+import { MermaidDiagram } from "./mermaid";
+import { Board } from "./board";
 import { Figure } from "./figure";
 import { Attachment, AudioFile, Callout, FontFamilyMark, FontSizeMark, LinkCard, DataTextAlign, DetailsTitleEnter, NamedHighlight, TextColorMark, VideoEmbed, VideoFile } from "./rich-nodes";
 import { SlashCommand } from "./slash-menu";
@@ -55,6 +57,8 @@ export function notebookExtensions() {
     DetailsContent,
     DetailsTitleEnter,
     ...mathExtensions,
+    MermaidDiagram,
+    Board,
     Placeholder.configure({
       placeholder: ({ node }) => (node.type.name === "heading" ? "Heading" : node.type.name === "detailsSummary" ? "Toggle title" : "Write, or type '/' for blocks…"),
       includeChildren: true,

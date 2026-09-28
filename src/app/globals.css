@@ -487,19 +487,19 @@ mark,
   color: inherit;
 }
 mark,
-mark[data-color="yellow"], [data-swatch="yellow"] { background: oklch(0.93 0.1 95); }
-mark[data-color="green"], [data-swatch="green"] { background: oklch(0.92 0.08 150); }
-mark[data-color="blue"], [data-swatch="blue"] { background: oklch(0.91 0.06 240); }
-mark[data-color="pink"], [data-swatch="pink"] { background: oklch(0.91 0.07 350); }
-mark[data-color="purple"], [data-swatch="purple"] { background: oklch(0.9 0.07 300); }
-mark[data-color="orange"], [data-swatch="orange"] { background: oklch(0.91 0.09 65); }
+mark[data-color="yellow"], [data-swatch="yellow"], .prose-content div[data-board-column] li[data-label="yellow"] { background: oklch(0.93 0.1 95); }
+mark[data-color="green"], [data-swatch="green"], .prose-content div[data-board-column] li[data-label="green"] { background: oklch(0.92 0.08 150); }
+mark[data-color="blue"], [data-swatch="blue"], .prose-content div[data-board-column] li[data-label="blue"] { background: oklch(0.91 0.06 240); }
+mark[data-color="pink"], [data-swatch="pink"], .prose-content div[data-board-column] li[data-label="pink"] { background: oklch(0.91 0.07 350); }
+mark[data-color="purple"], [data-swatch="purple"], .prose-content div[data-board-column] li[data-label="purple"] { background: oklch(0.9 0.07 300); }
+mark[data-color="orange"], [data-swatch="orange"], .prose-content div[data-board-column] li[data-label="orange"] { background: oklch(0.91 0.09 65); }
 .dark mark,
-.dark mark[data-color="yellow"], .dark [data-swatch="yellow"] { background: oklch(0.45 0.09 95); }
-.dark mark[data-color="green"], .dark [data-swatch="green"] { background: oklch(0.4 0.08 150); }
-.dark mark[data-color="blue"], .dark [data-swatch="blue"] { background: oklch(0.4 0.08 245); }
-.dark mark[data-color="pink"], .dark [data-swatch="pink"] { background: oklch(0.42 0.09 350); }
-.dark mark[data-color="purple"], .dark [data-swatch="purple"] { background: oklch(0.4 0.1 300); }
-.dark mark[data-color="orange"], .dark [data-swatch="orange"] { background: oklch(0.45 0.1 60); }
+.dark mark[data-color="yellow"], .dark [data-swatch="yellow"], .dark .prose-content div[data-board-column] li[data-label="yellow"] { background: oklch(0.45 0.09 95); }
+.dark mark[data-color="green"], .dark [data-swatch="green"], .dark .prose-content div[data-board-column] li[data-label="green"] { background: oklch(0.4 0.08 150); }
+.dark mark[data-color="blue"], .dark [data-swatch="blue"], .dark .prose-content div[data-board-column] li[data-label="blue"] { background: oklch(0.4 0.08 245); }
+.dark mark[data-color="pink"], .dark [data-swatch="pink"], .dark .prose-content div[data-board-column] li[data-label="pink"] { background: oklch(0.42 0.09 350); }
+.dark mark[data-color="purple"], .dark [data-swatch="purple"], .dark .prose-content div[data-board-column] li[data-label="purple"] { background: oklch(0.4 0.1 300); }
+.dark mark[data-color="orange"], .dark [data-swatch="orange"], .dark .prose-content div[data-board-column] li[data-label="orange"] { background: oklch(0.45 0.1 60); }
 
 /* Checklists */
 .prose-content ul[data-type="taskList"] {
@@ -882,3 +882,94 @@ mark[data-color="orange"], [data-swatch="orange"] { background: oklch(0.91 0.09 
 
 /* Toolbar: the text-colour button's bar shows the chosen colour. */
 [data-color-bar] { background: currentColor; }
+
+/* ── Mermaid diagrams ──────────────────────────────────────────── */
+.mermaid-svg svg,
+.mermaid-rendered svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+.prose-content .mermaid-rendered {
+  margin: 1.5em 0;
+  padding: 1rem;
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-surface);
+}
+.prose-content pre.mermaid-source-hidden { display: none; }
+
+/* ── Kanban boards ─────────────────────────────────────────────── */
+.board-column {
+  flex: none;
+  width: 15rem;
+  padding: 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-surface-2);
+}
+.board-card {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-surface);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+/* Article: read-only columns, scrolling sideways inside the board on small screens. */
+.prose-content div[data-type="board"] {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(13rem, 1fr);
+  gap: 0.75rem;
+  margin: 1.5em 0;
+  padding-bottom: 0.4rem;
+  overflow-x: auto;
+}
+.prose-content div[data-board-column] {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-content: start;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-surface-2);
+}
+.prose-content div[data-board-column] .board-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.prose-content div[data-board-column] .board-count {
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: var(--color-muted);
+  color: var(--color-muted-foreground);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+.prose-content div[data-board-column] ul {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.prose-content div[data-board-column] li {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background: var(--color-surface);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.prose-content div[data-board-column] li::marker { content: ""; }

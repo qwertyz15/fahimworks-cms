@@ -5,9 +5,12 @@ import { Extension, type Editor, type Range } from "@tiptap/core";
 import { ReactRenderer } from "@tiptap/react";
 import Suggestion, { type SuggestionKeyDownProps, type SuggestionProps } from "@tiptap/suggestion";
 import { computePosition, flip, offset, shift } from "@floating-ui/dom";
-import { ChevronRight, Code2, Link2, Heading1, Heading2, Heading3, Heading4, ImagePlus, List, ListChecks, ListOrdered, MessageSquareWarning, Minus, Music, Paperclip, Sigma, SquareRadical, Pilcrow, Quote, Table, Video, type LucideIcon } from "lucide-react";
+import { ChevronRight, Code2, Link2, SquareKanban, Workflow, Heading1, Heading2, Heading3, Heading4, ImagePlus, List, ListChecks, ListOrdered, MessageSquareWarning, Minus, Music, Paperclip, Sigma, SquareRadical, Pilcrow, Quote, Table, Video, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { editMath } from "./math";
+import { editMermaid } from "./mermaid";
+import { newBoard } from "./board";
+import { blockBoundary, insertBlock } from "./blocks";
 import { requestLinkCard } from "./link-card-dialog";
 
 /** The "/" command menu: type "/" in the editor to insert a block. */
@@ -65,6 +68,26 @@ export const SLASH_ITEMS: SlashItem[] = [
     run: (e, r) => {
       e.chain().focus().deleteRange(r).run();
       editMath({ kind: "inline", pos: null, latex: "" });
+    },
+  },
+  {
+    title: "Diagram",
+    description: "Mermaid flowchart, sequence, Gantt, mind map…",
+    icon: Workflow,
+    keywords: ["mermaid", "flowchart", "chart", "graph", "sequence", "gantt", "mindmap", "architecture", "uml"],
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).run();
+      editMermaid({ pos: null, source: "" });
+    },
+  },
+  {
+    title: "Board",
+    description: "Kanban board with columns and cards",
+    icon: SquareKanban,
+    keywords: ["kanban", "board", "columns", "cards", "trello", "tasks", "todo"],
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).run();
+      insertBlock(e, blockBoundary(e.state.doc, e.state.selection.from), { type: "board", attrs: { columns: newBoard() } });
     },
   },
   { title: "Code block", description: "Code with syntax highlighting", icon: Code2, keywords: ["code", "snippet", "pre"], run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run() },

@@ -21,7 +21,7 @@ const SIZE_SET = new Set<string>(FONT_SIZES);
 const FONT_SET = new Set<string>(FONT_FAMILIES);
 const ALIGNABLE = ["p", "h1", "h2", "h3", "h4"] as const;
 const CALLOUT_SET = new Set<string>(CALLOUT_VARIANTS);
-const DIV_TYPES = new Set(["block-math", "detailsContent"]);
+const DIV_TYPES = new Set(["block-math", "detailsContent", "board"]);
 
 /**
  * MathML produced by KaTeX. Only allowed in the final pass, after renderMath()
@@ -43,7 +43,7 @@ const MATHML_VALUE = /^[\w\s./%+-]{0,80}$/;
 const MATHML_OPTIONS: Partial<sanitizeHtml.IOptions> = {
   allowedAttributes: Object.fromEntries(MATHML_TAGS.map((t) => [t, MATHML_ATTRS])),
 };
-const SPAN_CLASSES = [/^hljs(-[\w-]+)?$/, /^attachment-(name|meta)$/, /^card-(text|title|desc|site)$/];
+const SPAN_CLASSES = [/^hljs(-[\w-]+)?$/, /^attachment-(name|meta)$/, /^card-(text|title|desc|site)$/, /^board-(title|count)$/];
 
 const OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: [
@@ -64,16 +64,16 @@ const OPTIONS: sanitizeHtml.IOptions = {
     ...Object.fromEntries(ALIGNABLE.map((t) => [t, ["data-align"]])),
     figcaption: [],
     code: ["class"],
-    pre: ["class"],
+    pre: ["class", "data-mermaid"],
     span: ["class", "data-text-color", "data-size", "data-font", "data-type", "data-latex"],
     aside: ["data-callout"],
     details: [],
     summary: [],
     mark: ["data-color"],
     ul: ["data-type"],
-    li: ["data-type", "data-checked"],
+    li: ["data-type", "data-checked", "data-label"],
     input: ["type", "checked", "disabled"],
-    div: ["data-video-embed", "data-type", "data-latex"],
+    div: ["data-video-embed", "data-type", "data-latex", "data-board-column"],
     th: ["colspan", "rowspan"],
     td: ["colspan", "rowspan"],
     ol: ["start"],
@@ -196,17 +196,20 @@ export function sanitizeNotebookHtml(html: string, opts: SanitizeOptions = {}): 
         keepIf(attribs, "data-font", (v) => FONT_SET.has(v));
         return { tagName, attribs: keepIf(attribs, "data-text-color", (v) => TEXT_COLOR_SET.has(v)) };
       },
+      pre: (tagName, attribs) => ({ tagName, attribs: keepIf(attribs, "data-mermaid", (v) => v === "") }),
       aside: (tagName, attribs) => ({ tagName, attribs: { "data-callout": CALLOUT_SET.has(attribs["data-callout"] ?? "") ? attribs["data-callout"]! : "note" } }),
       mark: (tagName, attribs) => ({ tagName, attribs: keepIf(attribs, "data-color", (v) => HIGHLIGHT_SET.has(v)) }),
       ul: (tagName, attribs) => ({ tagName, attribs: keepIf(attribs, "data-type", (v) => v === "taskList") }),
       li: (tagName, attribs) => {
         keepIf(attribs, "data-type", (v) => v === "taskItem");
+        keepIf(attribs, "data-label", (v) => HIGHLIGHT_SET.has(v));
         return { tagName, attribs: keepIf(attribs, "data-checked", (v) => v === "true" || v === "false") };
       },
       // Checklist ticks are read-only on the page.
       input: (tagName, attribs) => ({ tagName, attribs: { type: attribs.type === "checkbox" ? "checkbox" : "hidden-invalid", ...("checked" in attribs ? { checked: "checked" } : {}), disabled: "disabled" } }),
       div: (tagName, attribs) => {
         keepIf(attribs, "data-type", (v) => DIV_TYPES.has(v));
+        keepIf(attribs, "data-board-column", (v) => v === "");
         mathAttrs(attribs, "block-math");
         return { tagName, attribs: keepIf(attribs, "data-video-embed", (v) => v === "youtube" || v === "vimeo") };
       },
@@ -340,8 +343,8 @@ export function deriveFields(cleanHtml: string): DerivedFields {
   $('[data-type="inline-math"], [data-type="block-math"]').each((_, el) => {
     $(el).text(` ${$(el).attr("data-latex") ?? ""} `);
   });
-  // Link cards preview other pages: not part of this post's words or images.
-  $("a[data-link-card]").remove();
+  // Link cards preview other pages, and diagram source is code: neither counts as the post's words.
+  $("a[data-link-card], pre[data-mermaid]").remove();
   // Keep block boundaries as spaces so words don't run together.
   $("p, h1, h2, h3, h4, li, blockquote, pre, td, th, figcaption, summary, aside, br").after(" ");
   const contentText = $.root().text().replace(/\s+/g, " ").trim();

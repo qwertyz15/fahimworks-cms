@@ -8,7 +8,7 @@ import { useEffect } from "react";
  */
 export function CodeCopy({ selector }: { selector: string }) {
   useEffect(() => {
-    const blocks = document.querySelectorAll<HTMLPreElement>(`${selector} pre`);
+    const blocks = document.querySelectorAll<HTMLPreElement>(`${selector} pre:not([data-mermaid])`);
     const cleanups: (() => void)[] = [];
     blocks.forEach((pre) => {
       if (pre.parentElement?.classList.contains("code-wrap")) return;

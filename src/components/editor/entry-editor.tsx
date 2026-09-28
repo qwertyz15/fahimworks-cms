@@ -22,6 +22,7 @@ import { ACCEPTED_IMAGE_TYPES, ACCEPTED_TYPES, AUDIO_ACCEPT, FILE_ACCEPT, fileTy
 import { parseVideoUrl } from "./rich-nodes";
 import { blockBoundary, insertBlock } from "./blocks";
 import { MathDialog } from "./math-dialog";
+import { MermaidDialog } from "./mermaid-dialog";
 import { LinkCardDialog, requestLinkCard } from "./link-card-dialog";
 
 export interface EditableEntry {
@@ -663,6 +664,7 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
       </Dialog>
 
       <MathDialog editor={editor} />
+      <MermaidDialog editor={editor} />
       <LinkCardDialog editor={editor} />
 
       <Dialog

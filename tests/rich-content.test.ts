@@ -238,3 +238,37 @@ describe("font size, font family and the wider colour palette", () => {
     expect(out).toBe("<p><span>x</span></p>");
   });
 });
+
+describe("mermaid diagrams", () => {
+  it("keeps the source as plain code", () => {
+    const html = '<pre data-mermaid=""><code>flowchart TD\n  A[Start] --&gt; B{OK?}</code></pre>';
+    const out = clean(html);
+    expect(out).toMatch(/<pre data-mermaid(="")?><code>flowchart TD\n {2}A\[Start\] --&gt; B\{OK\?\}<\/code><\/pre>/);
+  });
+  it("strips markup smuggled into a diagram", () => {
+    const out = renderNotebookHtml('<pre data-mermaid="x" onclick="y()"><code><svg onload="alert(1)"><script>alert(2)</script></svg>graph TD; A--&gt;B</code></pre>');
+    expect(out).not.toMatch(/<svg|<script|onload|onclick|alert\(2\)|data-mermaid="x"/);
+    expect(out).toContain("graph TD; A--&gt;B");
+  });
+  it("diagram source isn't counted as words", () => {
+    const html = clean('<p>One two three four five six seven eight.</p><pre data-mermaid=""><code>flowchart TD; Alpha --&gt; Beta --&gt; Gamma</code></pre>');
+    expect(deriveFields(html).contentText).toBe("One two three four five six seven eight.");
+  });
+});
+
+describe("kanban boards", () => {
+  const board =
+    '<div data-type="board"><div data-board-column=""><span class="board-title">To do</span><span class="board-count">2</span><ul><li data-label="yellow">Write intro</li><li>Add diagram</li></ul></div><div data-board-column=""><span class="board-title">Done</span><span class="board-count">0</span><ul></ul></div></div>';
+  it("keeps the board structure", () => {
+    const out = clean(board);
+    expect(out).toContain('<div data-type="board">');
+    expect(out).toMatch(/<div data-board-column(="")?><span class="board-title">To do<\/span><span class="board-count">2<\/span><ul><li data-label="yellow">Write intro<\/li><li>Add diagram<\/li><\/ul><\/div>/);
+  });
+  it("drops unknown labels, styles and handlers", () => {
+    const out = clean('<div data-type="board" style="x"><div data-board-column="evil" onclick="x()"><span class="board-title evil">T</span><ul><li data-label="#f00" style="color:red">c</li></ul></div></div>');
+    expect(out).not.toMatch(/style=|onclick|data-label|data-board-column="evil"|evil/);
+  });
+  it("card text counts as the post's words", () => {
+    expect(deriveFields(clean(board)).contentText).toContain("Write intro");
+  });
+});

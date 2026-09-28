@@ -73,3 +73,12 @@ export type FontSize = (typeof FONT_SIZES)[number];
 /** Font families, stored as data-font (none = the default sans). */
 export const FONT_FAMILIES = ["serif", "mono", "handwriting", "rounded", "condensed", "book", "display"] as const;
 export type FontFamily = (typeof FONT_FAMILIES)[number];
+
+/** Longest Mermaid source kept for one diagram. */
+export const MERMAID_MAX = 10_000;
+
+/** Kanban board limits. */
+export const BOARD_MAX_COLUMNS = 8;
+export const BOARD_MAX_CARDS = 200;
+export const BOARD_CARD_MAX = 500;
+export const BOARD_TITLE_MAX = 60;

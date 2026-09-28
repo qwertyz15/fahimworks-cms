@@ -23,8 +23,6 @@ export const NoteLink = Node.create({
   inline: true,
   atom: true,
   selectable: true,
-  // Parse before the Link mark (which also matches <a>).
-  priority: 1001,
   addAttributes() {
     return { id: { default: null }, label: { default: "" } };
   },
@@ -32,6 +30,8 @@ export const NoteLink = Node.create({
     return [
       {
         tag: "a[data-ref]",
+        // Rule priority: match before the Link mark, which also parses <a>.
+        priority: 100,
         getAttrs: (el: HTMLElement) => {
           const id = el.getAttribute("data-ref") ?? "";
           return NOTE_REF_RE.test(id) ? { id, label: el.textContent ?? "" } : false;
