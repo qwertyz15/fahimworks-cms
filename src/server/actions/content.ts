@@ -6,7 +6,7 @@ import { z } from "zod";
 import { RATE_LIMITS } from "@/lib/rate-limit";
 import { CONTENT_TYPES, createContentSchema, idSchema, updateContentSchema, urlSchema } from "@/lib/validation";
 import {
-  approveContent,
+  publishContent,
   createContent,
   deleteContent,
   previewUrl,
@@ -17,6 +17,8 @@ import {
   type UrlPreview,
 } from "@/server/services/content";
 import { runExtraction } from "@/server/services/extraction";
+import { publishEntry, unpublishEntry } from "@/server/services/notebook";
+import { db } from "@/lib/db";
 import { TIMELINE_TAG } from "@/server/queries/public";
 import { adminAction, formString, type ActionResult } from "./result";
 
@@ -63,7 +65,7 @@ export async function createContentAction(_prev: ActionResult, form: FormData): 
       const extraction = await runExtraction(content.id, user.id);
       let outcome: "published" | "review" | "failed" = extraction.ok ? "review" : "failed";
       if (extraction.ok && input.intent === "publish") {
-        await approveContent(content.id, user.id);
+        await publishContent(content.id, user.id);
         outcome = "published";
       }
       target = `/dashboard/content/${content.id}?added=${outcome}`;
@@ -88,10 +90,14 @@ export async function reextractAction(contentId: string): Promise<ActionResult> 
   );
 }
 
-export async function approveAction(contentId: string): Promise<ActionResult> {
+/** Publish any item: Notebook entries and imported items (which need a successful extraction). */
+export async function publishAction(contentId: string): Promise<ActionResult> {
   return adminAction(async (user) => {
     const id = idSchema.parse(contentId);
-    await approveContent(id, user.id);
+    const item = await db.content.findUnique({ where: { id }, select: { source: true } });
+    if (!item) return { ok: false, error: "Content not found." };
+    if (item.source === "WRITTEN") await publishEntry(id, user.id);
+    else await publishContent(id, user.id);
     refresh(id);
     return { ok: true, message: "Published to your portfolio." };
   });
@@ -107,12 +113,16 @@ export async function rejectAction(contentId: string, reason: string): Promise<A
   });
 }
 
+/** Unpublish any item: it leaves the timeline, API and RSS and becomes a draft again. */
 export async function unpublishAction(contentId: string): Promise<ActionResult> {
   return adminAction(async (user) => {
     const id = idSchema.parse(contentId);
-    await unpublishContent(id, user.id);
+    const item = await db.content.findUnique({ where: { id }, select: { source: true } });
+    if (!item) return { ok: false, error: "Content not found." };
+    if (item.source === "WRITTEN") await unpublishEntry(id, user.id);
+    else await unpublishContent(id, user.id);
     refresh(id);
-    return { ok: true, message: "Removed from your portfolio. The item is back in review." };
+    return { ok: true, message: "Unpublished — it's a draft again." };
   });
 }
 

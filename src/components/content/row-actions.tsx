@@ -2,34 +2,56 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { CheckCircle2, Eye, MoreHorizontal, Pencil, Trash2, XCircle } from "lucide-react";
-import type { ContentStatus } from "@/generated/prisma/enums";
-import { approveAction, deleteContentAction } from "@/server/actions/content";
+import { Eye, EyeOff, MoreHorizontal, Pencil, Send, Trash2, XCircle } from "lucide-react";
+import type { ContentStatus, ExtractionStatus } from "@/generated/prisma/enums";
+import { deleteContentAction, publishAction, unpublishAction } from "@/server/actions/content";
 import { Dropdown, MenuItem, MenuSeparator } from "@/components/ui/dropdown";
 import { useRunAction } from "@/components/use-action-toast";
 import { DeleteDialog, RejectDialog } from "./decision-dialogs";
 
-export function RowActions({ id, title, status }: { id: string; title: string; status: ContentStatus }) {
+export interface RowActionsProps {
+  id: string;
+  title: string;
+  status: ContentStatus;
+  source: "IMPORTED" | "WRITTEN";
+  extractionStatus: ExtractionStatus;
+}
+
+export function RowActions({ id, title, status, source, extractionStatus }: RowActionsProps) {
   const router = useRouter();
   const { run, pending } = useRunAction();
   const [dialog, setDialog] = useState<"reject" | "delete" | null>(null);
-  const canDecide = status === "AWAITING_APPROVAL";
+  const written = source === "WRITTEN";
+  const published = status === "PUBLISHED";
+  // Imported items need a successful extraction before they can go live.
+  const canPublish = written || extractionStatus === "SUCCEEDED";
+  const canReject = !written && (status === "AWAITING_APPROVAL" || status === "VERIFIED");
+  const openHref = written ? `/dashboard/notebook/${id}` : `/dashboard/content/${id}`;
+  const editHref = written ? `/dashboard/notebook/${id}` : `/dashboard/content/${id}/edit`;
 
   return (
     <>
       <Dropdown label={`Actions for ${title}`} trigger={<MoreHorizontal className="m-1.5 size-4" />}>
         {(close) => (
           <>
-            <MenuItem onSelect={() => { close(); router.push(`/dashboard/content/${id}`); }}>
-              <Eye /> Preview
+            <MenuItem onSelect={() => { close(); router.push(openHref); }}>
+              <Eye /> {written ? "Open in Notebook" : "Preview"}
             </MenuItem>
-            <MenuItem disabled={!canDecide || pending} onSelect={() => { close(); run(() => approveAction(id)); }}>
-              <CheckCircle2 /> Approve
-            </MenuItem>
-            <MenuItem disabled={!canDecide && status !== "VERIFIED"} onSelect={() => { close(); setDialog("reject"); }}>
-              <XCircle /> Reject
-            </MenuItem>
-            <MenuItem onSelect={() => { close(); router.push(`/dashboard/content/${id}/edit`); }}>
+            {published ? (
+              <MenuItem disabled={pending} onSelect={() => { close(); run(() => unpublishAction(id)); }}>
+                <EyeOff /> Unpublish
+              </MenuItem>
+            ) : (
+              <MenuItem disabled={pending || !canPublish} onSelect={() => { close(); run(() => publishAction(id)); }}>
+                <Send /> {canPublish ? "Publish" : "Publish (extract first)"}
+              </MenuItem>
+            )}
+            {!written && (
+              <MenuItem disabled={!canReject} onSelect={() => { close(); setDialog("reject"); }}>
+                <XCircle /> Reject
+              </MenuItem>
+            )}
+            <MenuItem onSelect={() => { close(); router.push(editHref); }}>
               <Pencil /> Edit
             </MenuItem>
             <MenuSeparator />

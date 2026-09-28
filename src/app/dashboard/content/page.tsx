@@ -76,7 +76,7 @@ export default async function ContentPage({ searchParams }: PageProps<"/dashboar
                     <StatusBadge status={item.status} />
                   </div>
                 </Link>
-                <RowActions id={item.id} title={item.title} status={item.status} />
+                <RowActions id={item.id} title={item.title} status={item.status} source={item.source} extractionStatus={item.extractionStatus} />
               </li>
             ))}
           </ul>
@@ -125,7 +125,7 @@ export default async function ContentPage({ searchParams }: PageProps<"/dashboar
                     <td className="px-3 py-2.5"><StatusBadge status={item.status} /></td>
                     <td className="px-3 py-2.5 text-[13px] whitespace-nowrap text-muted-foreground">{formatDate(item.publishedAt ?? item.createdAt)}</td>
                     <td className="px-3 py-2.5 text-right">
-                      <div className="flex justify-end"><RowActions id={item.id} title={item.title} status={item.status} /></div>
+                      <div className="flex justify-end"><RowActions id={item.id} title={item.title} status={item.status} source={item.source} extractionStatus={item.extractionStatus} /></div>
                     </td>
                   </tr>
                 ))}

@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
  *
  *   DRAFT ──extract──▶ AWAITING_APPROVAL ──approve──▶ PUBLISHED
  *                        ▲          │                     │
- *                        └─reopen─ REJECTED    unpublish ─┘ (→ AWAITING_APPROVAL)
+ *                        └─reopen─ REJECTED    unpublish ─┘ (→ DRAFT)
  *
  * Adding content normally runs extract + approve in one step ("Publish").
  * VERIFICATION_PENDING / VERIFIED are legacy stages from the removed
@@ -17,14 +17,14 @@ import { db } from "@/lib/db";
  */
 
 export const TRANSITIONS: Record<ContentStatus, readonly ContentStatus[]> = {
-  // DRAFT → PUBLISHED is used by Notebook entries (no approval step); imported
-  // items reach PUBLISHED only via AWAITING_APPROVAL (services/content.approveContent).
+  // Any unpublished stage can be published directly (Publish button); imported items
+  // additionally need a successful extraction (services/content.publishContent).
   DRAFT: ["AWAITING_APPROVAL", "PUBLISHED"],
-  VERIFICATION_PENDING: ["AWAITING_APPROVAL", "DRAFT"],
-  VERIFIED: ["AWAITING_APPROVAL", "DRAFT", "REJECTED"],
+  VERIFICATION_PENDING: ["AWAITING_APPROVAL", "DRAFT", "PUBLISHED"],
+  VERIFIED: ["AWAITING_APPROVAL", "DRAFT", "REJECTED", "PUBLISHED"],
   AWAITING_APPROVAL: ["PUBLISHED", "REJECTED", "DRAFT", "AWAITING_APPROVAL"],
   PUBLISHED: ["AWAITING_APPROVAL", "DRAFT", "PUBLISHED"],
-  REJECTED: ["AWAITING_APPROVAL", "DRAFT"],
+  REJECTED: ["AWAITING_APPROVAL", "DRAFT", "PUBLISHED"],
 };
 
 export class WorkflowError extends Error {

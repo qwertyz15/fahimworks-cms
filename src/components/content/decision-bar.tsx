@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { CheckCircle2, EyeOff, Pencil, RefreshCw, RotateCcw, Trash2, XCircle } from "lucide-react";
+import { EyeOff, Pencil, RefreshCw, RotateCcw, Send, Trash2, XCircle } from "lucide-react";
 import type { ContentStatus, ExtractionStatus } from "@/generated/prisma/enums";
-import { approveAction, deleteContentAction, reextractAction, reopenAction, unpublishAction } from "@/server/actions/content";
+import { deleteContentAction, publishAction, reextractAction, reopenAction, unpublishAction } from "@/server/actions/content";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useRunAction } from "@/components/use-action-toast";
 import { DeleteDialog, RejectDialog } from "./decision-dialogs";
@@ -31,17 +31,13 @@ export function DecisionBar({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {status === "AWAITING_APPROVAL" && (
-        <>
-          <Button variant="success" loading={main.pending} onClick={() => main.run(() => approveAction(id))} title={hasDuplicates ? "Possible duplicates exist — review them first" : undefined}>
-            <CheckCircle2 /> Approve &amp; publish
-          </Button>
-          <Button variant="outline" onClick={() => setDialog("reject")}>
-            <XCircle /> Reject
-          </Button>
-        </>
+      {/* Publish from any unpublished stage once the page has been extracted. */}
+      {status !== "PUBLISHED" && !needsExtraction && (
+        <Button variant="success" loading={main.pending} onClick={() => main.run(() => publishAction(id))} title={hasDuplicates ? "Possible duplicates exist — review them first" : undefined}>
+          <Send /> Publish
+        </Button>
       )}
-      {status === "VERIFIED" && (
+      {(status === "AWAITING_APPROVAL" || status === "VERIFIED") && (
         <Button variant="outline" onClick={() => setDialog("reject")}>
           <XCircle /> Reject
         </Button>

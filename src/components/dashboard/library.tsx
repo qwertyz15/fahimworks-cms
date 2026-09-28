@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { ArrowRight, ArrowUpRight, PlusCircle } from "lucide-react";
 import type { ContentType } from "@/generated/prisma/enums";
 import { StatusBadge } from "@/components/content/badges";
+import { PublishToggle } from "@/components/content/publish-toggle";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/misc";
@@ -72,16 +73,17 @@ function GridCard({ item }: { item: LibraryItem }) {
           {item.title}
         </Link>
         {item.description && <p className="line-clamp-2 text-xs text-muted-foreground">{item.description}</p>}
+        <p className="text-[11px] text-muted-foreground">{formatDate(item.publishDate ?? item.updatedAt)}</p>
         <div className="mt-auto flex items-center justify-between gap-2 pt-1">
           <StatusBadge status={item.status} />
-          <span className="truncate text-[11px] text-muted-foreground">{formatDate(item.publishDate ?? item.updatedAt)}</span>
+          <PublishToggle id={item.id} status={item.status} source={item.source} extractionStatus={item.extractionStatus} />
         </div>
       </div>
     </div>
   );
 }
 
-const LIST_COLS = "md:grid-cols-[minmax(0,1fr)_7rem_11rem_9rem_7rem_2rem]";
+const LIST_COLS = "md:grid-cols-[minmax(0,1fr)_6.5rem_15rem_8rem_6.5rem_2rem]";
 
 function ListRows({ items }: { items: LibraryItem[] }) {
   return (
@@ -121,7 +123,10 @@ function ListRows({ items }: { items: LibraryItem[] }) {
                 <meta.icon className="size-3.5" /> {meta.label}
               </span>
               <span className="hidden md:block">
-                <StatusBadge status={item.status} />
+                <span className="relative z-10 inline-flex items-center gap-2">
+                  <StatusBadge status={item.status} />
+                  <PublishToggle id={item.id} status={item.status} source={item.source} extractionStatus={item.extractionStatus} className="h-6 px-1.5" />
+                </span>
               </span>
               <span className="hidden truncate text-[13px] text-muted-foreground md:block">{item.url ? (item.siteName ?? displayHost(item.url)) : "Notebook"}</span>
               <span className="hidden text-right text-[13px] whitespace-nowrap text-muted-foreground md:block">{formatDate(item.updatedAt)}</span>

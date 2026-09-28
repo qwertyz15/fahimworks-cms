@@ -200,13 +200,14 @@ async function load(id: string) {
   return content;
 }
 
-export async function approveContent(id: string, actorId: string) {
+/** Publish an imported item from any unpublished stage. Its page must have been extracted. */
+export async function publishContent(id: string, actorId: string) {
   const content = await load(id);
-  if (content.status !== "AWAITING_APPROVAL") throw new WorkflowError("Only items waiting for approval can be published.");
+  if (content.status === "PUBLISHED") return;
   if (content.extractionStatus !== "SUCCEEDED") {
-    throw new WorkflowError("Extract the content before publishing.");
+    throw new WorkflowError("This page hasn't been extracted yet — click Extract content, then publish.");
   }
-  await transition(id, "AWAITING_APPROVAL", "PUBLISHED");
+  await transition(id, content.status, "PUBLISHED");
   await audit({ actorId, action: "content.approved", targetType: "content", targetId: id });
 }
 
@@ -222,7 +223,8 @@ export async function rejectContent(id: string, reason: string | null, actorId: 
 export async function unpublishContent(id: string, actorId: string) {
   const content = await load(id);
   if (content.status !== "PUBLISHED") throw new WorkflowError("This item is not published.");
-  await transition(id, "PUBLISHED", "AWAITING_APPROVAL");
+  // Unpublished items become drafts (same as Notebook entries).
+  await transition(id, "PUBLISHED", "DRAFT");
   await audit({ actorId, action: "content.unpublished", targetType: "content", targetId: id });
 }
 
