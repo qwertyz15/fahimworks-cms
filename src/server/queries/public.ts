@@ -50,14 +50,27 @@ export function getPublishedBySlug(slug: string) {
 export const TIMELINE_TAG = "timeline";
 
 /** Everything the public timeline shows. Cached; invalidated by updateTag(TIMELINE_TAG) on changes. */
+/** The date the timeline shows: original publish date, else when it was published here. */
+export function timelineDate(item: { publishDate: Date | null; publishedAt: Date | null }): Date | null {
+  return item.publishDate ?? item.publishedAt;
+}
+
 export const getTimelineItems = unstable_cache(
-  async () =>
-    db.content.findMany({
+  async () => {
+    const items = await db.content.findMany({
       where: { status: "PUBLISHED" },
       select: publicSelect,
-      orderBy: [{ publishDate: { sort: "desc", nulls: "last" } }, { publishedAt: "desc" }, { id: "desc" }],
       take: 500,
-    }),
+    });
+    // Sort by the same date the page displays and groups by — newest first,
+    // undated last. (A DB ORDER BY on publishDate alone misplaces items that
+    // only have publishedAt.)
+    return items.sort((a, b) => {
+      const da = timelineDate(a)?.getTime() ?? -Infinity;
+      const db_ = timelineDate(b)?.getTime() ?? -Infinity;
+      return db_ - da || b.id.localeCompare(a.id);
+    });
+  },
   ["timeline-items"],
   { tags: [TIMELINE_TAG], revalidate: 3600 },
 );
