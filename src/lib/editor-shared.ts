@@ -62,3 +62,6 @@ export const MAX_LATEX = 2000;
 
 /** KaTeX settings shared by the editor preview and the server renderer (MathML only: no CSS or fonts needed). */
 export const KATEX_OPTIONS = { output: "mathml", throwOnError: true, strict: "ignore", trust: false, maxSize: 20, maxExpand: 500 } as const;
+
+/** Content ids (cuid) referenced by internal links. */
+export const NOTE_REF_RE = /^[A-Za-z0-9_-]{1,64}$/;

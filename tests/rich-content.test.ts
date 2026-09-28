@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EMBED_SRC_RE, embedSrc, parseVideoUrl } from "@/lib/editor-shared";
-import { deriveFields, mediaSources, renderNotebookHtml, sanitizeNotebookHtml as clean } from "@/server/services/notebook-html";
+import { applyNoteLinks, deriveFields, mediaSources, noteRefIds, renderNotebookHtml, sanitizeNotebookHtml as clean } from "@/server/services/notebook-html";
 
 describe("text colour + highlight", () => {
   it("keeps palette colours", () => {
@@ -170,5 +170,57 @@ describe("equations", () => {
   it("counts an equation's words once", () => {
     const html = renderNotebookHtml('<p>Energy is <span data-type="inline-math" data-latex="E=mc^2"></span> here.</p>');
     expect(deriveFields(html).contentText).toBe("Energy is E=mc^2 here.");
+  });
+});
+
+describe("internal links", () => {
+  const ID = "cmabc123def456ghi789";
+  it("keeps a valid data-ref and drops any href (the address is filled in at render time)", () => {
+    const out = clean(`<p>See <a data-ref="${ID}" href="javascript:alert(1)" class="note-link">My project</a></p>`);
+    expect(out).toContain(`data-ref="${ID}"`);
+    expect(out).not.toMatch(/href=|javascript:|class=/);
+    expect(noteRefIds(out)).toEqual([ID]);
+  });
+  it("drops malformed ids", () => {
+    expect(clean('<p><a data-ref="../../etc" href="https://x.example">x</a></p>')).not.toContain("data-ref");
+  });
+  it("resolves published targets and turns the rest into plain text", () => {
+    const html = clean(`<p><a data-ref="${ID}">Notebook post</a>, <a data-ref="cmimported00000000001">Repo</a> and <a data-ref="cmgone000000000000001">Draft &lt;b&gt;</a>.</p>`);
+    const out = applyNoteLinks(
+      html,
+      new Map([
+        [ID, { href: "https://timeline.example/p/notebook-post", internal: true }],
+        ["cmimported00000000001", { href: "https://github.com/me/repo", internal: false }],
+      ]),
+    );
+    expect(out).toMatch(/<a data-ref="cmabc123def456ghi789" href="https:\/\/timeline\.example\/p\/notebook-post">Notebook post<\/a>/);
+    expect(out).not.toMatch(/notebook-post" target/);
+    const repo = out.match(/<a [^>]*>Repo<\/a>/)?.[0] ?? "";
+    expect(repo).toContain('href="https://github.com/me/repo"');
+    expect(repo).toContain('target="_blank"');
+    expect(repo).toContain('rel="noopener noreferrer"');
+    expect(out).toContain("and Draft &lt;b&gt;.");
+    expect(out).not.toContain("cmgone");
+  });
+});
+
+describe("link cards", () => {
+  const card = '<a href="https://github.com/me/repo" data-link-card=""><span class="card-text"><span class="card-title">me/repo</span><span class="card-desc">A thing</span><span class="card-site">GitHub</span></span><img src="https://opengraph.githubassets.com/x/me/repo" alt=""></a>';
+  it("keeps the card structure", () => {
+    const out = clean(card);
+    expect(out).toMatch(/<a href="https:\/\/github\.com\/me\/repo" data-link-card(="")? target="_blank" rel="noopener noreferrer nofollow">/);
+    expect(out).toContain('<span class="card-title">me/repo</span>');
+    expect(out).toContain('src="https://opengraph.githubassets.com/x/me/repo"');
+  });
+  it("drops javascript: links and unknown classes", () => {
+    const out = clean('<a href="javascript:alert(1)" data-link-card=""><span class="card-title evil">x</span></a>');
+    expect(out).not.toMatch(/javascript:|evil/);
+  });
+  it("card images are not uploads, thumbnails or words of the post", () => {
+    const html = clean(`<p>Short intro text for this post goes right here.</p>${card}`);
+    expect(mediaSources(html)).toEqual([]);
+    const d = deriveFields(html);
+    expect(d.firstImage).toBeNull();
+    expect(d.contentText).toBe("Short intro text for this post goes right here.");
   });
 });

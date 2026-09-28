@@ -166,3 +166,26 @@ export async function unpublishEntry(id: string, actorId: string) {
   await transition(id, "PUBLISHED", "DRAFT");
   await audit({ actorId, action: "content.unpublished", targetType: "content", targetId: id, metadata: { source: "WRITTEN" } });
 }
+
+export interface LinkTarget {
+  id: string;
+  title: string;
+  type: ContentType;
+  source: "WRITTEN" | "IMPORTED";
+  published: boolean;
+}
+
+/** "[[" link picker: any of your items (Notebook entries and imported ones), newest first. */
+export async function searchLinkTargets(query: string, excludeId?: string | null): Promise<LinkTarget[]> {
+  const q = query.trim();
+  const rows = await db.content.findMany({
+    where: {
+      ...(q ? { title: { contains: q, mode: "insensitive" } } : {}),
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true, title: true, type: true, source: true, status: true },
+    orderBy: [{ updatedAt: "desc" }],
+    take: 8,
+  });
+  return rows.map((r) => ({ id: r.id, title: r.title, type: r.type, source: r.source as LinkTarget["source"], published: r.status === "PUBLISHED" }));
+}

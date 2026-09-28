@@ -3,7 +3,7 @@ import { common, createLowlight } from "lowlight";
 import katex from "katex";
 import sanitizeHtml from "sanitize-html";
 import { countWords } from "./extraction/parse";
-import { ALIGNMENTS, CALLOUT_VARIANTS, EMBED_HOSTS, EMBED_SRC_RE, HIGHLIGHT_COLORS, IMAGE_WIDTHS, KATEX_OPTIONS, MAX_LATEX, TEXT_COLORS } from "@/lib/editor-shared";
+import { ALIGNMENTS, CALLOUT_VARIANTS, NOTE_REF_RE, EMBED_HOSTS, EMBED_SRC_RE, HIGHLIGHT_COLORS, IMAGE_WIDTHS, KATEX_OPTIONS, MAX_LATEX, TEXT_COLORS } from "@/lib/editor-shared";
 
 /**
  * Server-side processing of Notebook (Tiptap) HTML. Pure functions — no
@@ -41,7 +41,7 @@ const MATHML_VALUE = /^[\w\s./%+-]{0,80}$/;
 const MATHML_OPTIONS: Partial<sanitizeHtml.IOptions> = {
   allowedAttributes: Object.fromEntries(MATHML_TAGS.map((t) => [t, MATHML_ATTRS])),
 };
-const SPAN_CLASSES = [/^hljs(-[\w-]+)?$/, /^attachment-(name|meta)$/];
+const SPAN_CLASSES = [/^hljs(-[\w-]+)?$/, /^attachment-(name|meta)$/, /^card-(text|title|desc|site)$/];
 
 const OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: [
@@ -53,7 +53,7 @@ const OPTIONS: sanitizeHtml.IOptions = {
     "aside", "details", "summary",
   ],
   allowedAttributes: {
-    a: ["href", "title", "target", "rel", "download", "data-attachment", "data-size", "data-mime"],
+    a: ["href", "title", "target", "rel", "download", "data-attachment", "data-size", "data-mime", "data-ref", "data-link-card"],
     img: ["src", "alt", "title", "width", "height", "loading", "referrerpolicy"],
     video: ["src", "controls", "preload", "playsinline"],
     audio: ["src", "controls", "preload"],
@@ -149,6 +149,10 @@ export function sanitizeNotebookHtml(html: string, opts: SanitizeOptions = {}): 
       a: (tagName, attribs) => {
         keepIf(attribs, "data-size", (v) => /^\d{1,12}$/.test(v));
         keepIf(attribs, "data-mime", (v) => /^[\w.+-]+\/[\w.+-]+$/.test(v));
+        keepIf(attribs, "data-ref", (v) => NOTE_REF_RE.test(v));
+        keepIf(attribs, "data-link-card", (v) => v === "");
+        // Internal links get their address when the page is rendered (applyNoteLinks).
+        if (attribs["data-ref"]) delete attribs.href;
         return { tagName, attribs: { ...attribs, target: "_blank", rel: "noopener noreferrer nofollow" } };
       },
       img: (tagName, attribs) => {
@@ -269,11 +273,46 @@ export function renderNotebookHtml(editorHtml: string, opts: SanitizeOptions = {
   return sanitizeNotebookHtml(renderMath(highlightCodeBlocks(sanitizeNotebookHtml(editorHtml, base))), { ...base, allowMathML: true });
 }
 
+// ── Internal links ──
+export interface NoteLinkTarget {
+  href: string;
+  /** A Notebook article on the timeline (opens in the same tab). */
+  internal: boolean;
+}
+
+/** Ids referenced by internal links in (sanitised) HTML. */
+export function noteRefIds(cleanHtml: string): string[] {
+  if (!cleanHtml.includes("data-ref")) return [];
+  const $ = cheerio.load(cleanHtml, null, false);
+  return [...new Set($("a[data-ref]").map((_, el) => $(el).attr("data-ref") ?? "").get().filter((id) => NOTE_REF_RE.test(id)))];
+}
+
+/**
+ * Give each internal link the current address of its target; links to items
+ * that aren't published (or no longer exist) become plain text.
+ */
+export function applyNoteLinks(cleanHtml: string, targets: Map<string, NoteLinkTarget>): string {
+  if (!cleanHtml.includes("data-ref")) return cleanHtml;
+  const $ = cheerio.load(cleanHtml, null, false);
+  $("a[data-ref]").each((_, el) => {
+    const a = $(el);
+    const target = targets.get(a.attr("data-ref") ?? "");
+    if (!target) {
+      a.replaceWith(escapeHtml(a.text()));
+      return;
+    }
+    a.attr("href", target.href);
+    if (target.internal) a.removeAttr("target").removeAttr("rel");
+    else a.attr({ target: "_blank", rel: "noopener noreferrer" });
+  });
+  return $.html();
+}
+
 /** Every uploaded-media URL in (sanitised) HTML: images, videos, audio and attachment links. */
 export function mediaSources(cleanHtml: string): string[] {
   const $ = cheerio.load(cleanHtml, null, false);
   const urls = [
-    ...$("img, video, audio").map((_, el) => $(el).attr("src") ?? "").get(),
+    ...$("img, video, audio").not("a[data-link-card] img").map((_, el) => $(el).attr("src") ?? "").get(),
     ...$("a[data-attachment]").map((_, el) => $(el).attr("href") ?? "").get(),
   ];
   return urls.filter(Boolean);
@@ -297,6 +336,8 @@ export function deriveFields(cleanHtml: string): DerivedFields {
   $('[data-type="inline-math"], [data-type="block-math"]').each((_, el) => {
     $(el).text(` ${$(el).attr("data-latex") ?? ""} `);
   });
+  // Link cards preview other pages: not part of this post's words or images.
+  $("a[data-link-card]").remove();
   // Keep block boundaries as spaces so words don't run together.
   $("p, h1, h2, h3, h4, li, blockquote, pre, td, th, figcaption, summary, aside, br").after(" ");
   const contentText = $.root().text().replace(/\s+/g, " ").trim();

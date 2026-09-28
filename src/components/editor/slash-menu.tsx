@@ -1,13 +1,14 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ForwardRefExoticComponent, type RefAttributes } from "react";
 import { Extension, type Editor, type Range } from "@tiptap/core";
 import { ReactRenderer } from "@tiptap/react";
 import Suggestion, { type SuggestionKeyDownProps, type SuggestionProps } from "@tiptap/suggestion";
 import { computePosition, flip, offset, shift } from "@floating-ui/dom";
-import { ChevronRight, Code2, Heading1, Heading2, Heading3, Heading4, ImagePlus, List, ListChecks, ListOrdered, MessageSquareWarning, Minus, Music, Paperclip, Sigma, SquareRadical, Pilcrow, Quote, Table, Video, type LucideIcon } from "lucide-react";
+import { ChevronRight, Code2, Link2, Heading1, Heading2, Heading3, Heading4, ImagePlus, List, ListChecks, ListOrdered, MessageSquareWarning, Minus, Music, Paperclip, Sigma, SquareRadical, Pilcrow, Quote, Table, Video, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { editMath } from "./math";
+import { requestLinkCard } from "./link-card-dialog";
 
 /** The "/" command menu: type "/" in the editor to insert a block. */
 
@@ -106,6 +107,16 @@ export const SLASH_ITEMS: SlashItem[] = [
     },
   },
   {
+    title: "Link card",
+    description: "Preview of a page — GitHub, website, article",
+    icon: Link2,
+    keywords: ["embed", "bookmark", "link", "preview", "github", "website", "card", "url"],
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).run();
+      requestLinkCard({ url: "" });
+    },
+  },
+  {
     title: "File",
     description: "Attach a PDF, ZIP, document… (download card)",
     icon: Paperclip,
@@ -135,7 +146,7 @@ export function filterSlashItems(query: string): SlashItem[] {
   return SLASH_ITEMS.filter((i) => i.title.toLowerCase().includes(q) || i.keywords.some((k) => k.startsWith(q)));
 }
 
-interface MenuHandle {
+export interface MenuHandle {
   onKeyDown: (event: KeyboardEvent) => boolean;
 }
 
@@ -200,10 +211,11 @@ const SlashMenuList = forwardRef<MenuHandle, SuggestionProps<SlashItem>>(functio
   );
 });
 
-function renderMenu() {
-  let renderer: ReactRenderer<MenuHandle, SuggestionProps<SlashItem>> | null = null;
+/** Floating popup for a Suggestion list (the "/" menu, the "[[" link picker). */
+export function suggestionPopup<T>(Component: ForwardRefExoticComponent<SuggestionProps<T> & RefAttributes<MenuHandle>>) {
+  let renderer: ReactRenderer<MenuHandle, SuggestionProps<T>> | null = null;
 
-  const place = (props: SuggestionProps<SlashItem>) => {
+  const place = (props: SuggestionProps<T>) => {
     const el = renderer?.element as HTMLElement | undefined;
     const rect = props.clientRect?.();
     if (!el || !rect) return;
@@ -215,14 +227,14 @@ function renderMenu() {
   };
 
   return {
-    onStart: (props: SuggestionProps<SlashItem>) => {
-      renderer = new ReactRenderer(SlashMenuList, { props, editor: props.editor });
+    onStart: (props: SuggestionProps<T>) => {
+      renderer = new ReactRenderer(Component, { props, editor: props.editor });
       const el = renderer.element as HTMLElement;
       Object.assign(el.style, { position: "fixed", zIndex: "50", left: "0px", top: "0px" });
       document.body.appendChild(el);
       place(props);
     },
-    onUpdate: (props: SuggestionProps<SlashItem>) => {
+    onUpdate: (props: SuggestionProps<T>) => {
       renderer?.updateProps(props);
       place(props);
     },
@@ -255,7 +267,7 @@ export const SlashCommand = Extension.create({
         allow: ({ state, range }) => state.doc.resolve(range.from).parent.type.name !== "codeBlock",
         items: ({ query }) => filterSlashItems(query),
         command: ({ editor, range, props }) => props.run(editor, range),
-        render: renderMenu,
+        render: () => suggestionPopup(SlashMenuList),
       }),
     ];
   },

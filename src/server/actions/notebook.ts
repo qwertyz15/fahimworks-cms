@@ -3,9 +3,11 @@
 import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@/generated/prisma/client";
-import { idSchema, saveEntrySchema } from "@/lib/validation";
+import { idSchema, saveEntrySchema, urlSchema } from "@/lib/validation";
+import { fetchAndExtract } from "@/server/services/extraction";
+import { SafeFetchError } from "@/lib/http/safe-fetch";
 import { TIMELINE_TAG } from "@/server/queries/public";
-import { deleteEntry, publishEntry, saveEntry, unpublishEntry, type SavedEntry } from "@/server/services/notebook";
+import { deleteEntry, publishEntry, saveEntry, searchLinkTargets, unpublishEntry, type LinkTarget, type SavedEntry } from "@/server/services/notebook";
 import { adminAction, type ActionResult } from "./result";
 import { z } from "zod";
 import { RATE_LIMITS } from "@/lib/rate-limit";
@@ -114,4 +116,58 @@ export async function cleanupImagesAction(): Promise<ActionResult> {
       message: deleted ? `Removed ${deleted} unused image${deleted === 1 ? "" : "s"} (${(bytes / (1024 * 1024)).toFixed(1)} MB).` : "No unused images to remove.",
     };
   });
+}
+
+const linkSearchSchema = z.object({ query: z.string().max(100).default(""), excludeId: z.string().max(64).nullable().optional() });
+
+/** Items for the "[[" internal-link picker (admin only, rate limited). */
+export async function searchLinkTargetsAction(payload: unknown): Promise<ActionResult<LinkTarget[]>> {
+  return adminAction(
+    async () => {
+      const input = linkSearchSchema.parse(payload);
+      return { ok: true, data: await searchLinkTargets(input.query, input.excludeId) };
+    },
+    { rateLimit: { key: "linkSearch", rule: RATE_LIMITS.linkSearch } },
+  );
+}
+
+export interface LinkPreview {
+  url: string;
+  title: string;
+  description: string | null;
+  image: string | null;
+  site: string;
+}
+
+const clip = (v: string | null | undefined, max: number) => {
+  const t = (v ?? "").replace(/\s+/g, " ").trim();
+  return t ? (t.length > max ? `${t.slice(0, max - 1).trimEnd()}…` : t) : null;
+};
+
+/** Title, description, image and site name for a link card (SSRF-safe fetch; admin only, rate limited). */
+export async function fetchLinkPreviewAction(payload: unknown): Promise<ActionResult<LinkPreview>> {
+  return adminAction(
+    async () => {
+      const url = urlSchema.parse(z.object({ url: z.string().max(2000) }).parse(payload).url);
+      try {
+        const { doc, finalUrl } = await fetchAndExtract(url);
+        const host = new URL(finalUrl).hostname.replace(/^www\./, "");
+        let image: string | null = null;
+        try {
+          const u = doc.thumbnail ? new URL(doc.thumbnail, finalUrl) : null;
+          image = u?.protocol === "https:" ? u.href : null;
+        } catch {
+          image = null;
+        }
+        return {
+          ok: true,
+          data: { url: finalUrl, title: clip(doc.title, 200) ?? host, description: clip(doc.description, 300), image, site: clip(doc.siteName, 80) ?? host },
+        };
+      } catch (err) {
+        if (err instanceof SafeFetchError) return { ok: false, error: `Couldn't load that page: ${err.message}` };
+        throw err;
+      }
+    },
+    { rateLimit: { key: "fetch", rule: RATE_LIMITS.fetch } },
+  );
 }

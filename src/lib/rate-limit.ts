@@ -73,6 +73,8 @@ export const RATE_LIMITS = {
   register: { limit: 5, windowMs: 60 * 60_000 },
   fetch: { limit: 30, windowMs: 10 * 60_000 },
   upload: { limit: 60, windowMs: 10 * 60_000 },
+  // The "[[" picker searches as you type.
+  linkSearch: { limit: 120, windowMs: 60_000 },
   mutation: { limit: 120, windowMs: 60_000 },
   publicApi: { limit: 120, windowMs: 60_000 },
 } satisfies Record<string, RateLimitRule>;

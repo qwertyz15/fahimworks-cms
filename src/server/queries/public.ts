@@ -4,6 +4,7 @@ import { writtenPostUrl } from "@/lib/timeline";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ContentType } from "@/generated/prisma/enums";
+import { applyNoteLinks, noteRefIds, type NoteLinkTarget } from "@/server/services/notebook-html";
 
 /** Fields safe to expose publicly. Never include tokens, raw HTML or internal state. */
 export const publicSelect = {
@@ -47,8 +48,10 @@ export async function listPublished(opts: { type?: ContentType; tag?: string; fe
   return { items, nextCursor: hasMore ? items[items.length - 1]!.id : null };
 }
 
-export function getPublishedBySlug(slug: string) {
-  return db.content.findFirst({ where: { slug, status: "PUBLISHED" }, select: { ...publicSelect, contentHtml: true } });
+export async function getPublishedBySlug(slug: string) {
+  const item = await db.content.findFirst({ where: { slug, status: "PUBLISHED" }, select: { ...publicSelect, contentHtml: true } });
+  if (item?.source === "WRITTEN" && item.contentHtml) item.contentHtml = await resolveNoteLinks(item.contentHtml);
+  return item;
 }
 
 /** Public shape: Notebook entries get their article URL; `bodyHtml` only for Notebook entries when requested. */
@@ -63,13 +66,32 @@ export function toPublicItem<T extends PublicContent & { contentHtml?: string | 
 
 export const TIMELINE_TAG = "timeline";
 
+/**
+ * Resolve internal links ("[[…]]") to the current address of each published
+ * target. Cached pages stay correct because every content change refreshes
+ * TIMELINE_TAG.
+ */
+export async function resolveNoteLinks(html: string): Promise<string> {
+  const ids = noteRefIds(html).slice(0, 200);
+  if (!ids.length) return html;
+  const rows = await db.content.findMany({ where: { id: { in: ids }, status: "PUBLISHED" }, select: { id: true, slug: true, url: true, source: true } });
+  const targets = new Map<string, NoteLinkTarget>();
+  for (const r of rows) {
+    if (r.source === "WRITTEN") targets.set(r.id, { href: writtenPostUrl(r.slug), internal: true });
+    else if (r.url) targets.set(r.id, { href: r.url, internal: false });
+  }
+  return applyNoteLinks(html, targets);
+}
+
 /** A published Notebook article for /p/<slug>. Cached with the timeline. */
 export const getPublishedArticle = unstable_cache(
-  async (slug: string) =>
-    db.content.findFirst({
+  async (slug: string) => {
+    const article = await db.content.findFirst({
       where: { slug, status: "PUBLISHED", source: "WRITTEN" },
       select: { ...publicSelect, contentHtml: true, wordCount: true, updatedAt: true },
-    }),
+    });
+    return article && { ...article, contentHtml: article.contentHtml ? await resolveNoteLinks(article.contentHtml) : article.contentHtml };
+  },
   ["published-article"],
   { tags: [TIMELINE_TAG], revalidate: 3600 },
 );

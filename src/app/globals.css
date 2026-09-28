@@ -775,3 +775,83 @@ mark[data-color="orange"], [data-swatch="orange"] { background: oklch(0.91 0.09 
   font-family: var(--font-mono);
   font-size: 0.85em;
 }
+
+/* ── Internal links ([[…]]) ────────────────────────────────────── */
+.notebook-editor a.note-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+  padding: 0 0.35em;
+  border-radius: 0.35rem;
+  background: color-mix(in oklch, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+  font-weight: 500;
+  text-decoration: none;
+  cursor: default;
+}
+.notebook-editor a.note-link::before {
+  content: "↗";
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+.notebook-editor a.note-link.ProseMirror-selectednode {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 1px;
+}
+
+/* ── Link preview cards ────────────────────────────────────────── */
+.prose-content a[data-link-card] {
+  display: flex;
+  margin: 1.3em 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  background: var(--color-surface);
+  color: var(--color-foreground);
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+.prose-content a[data-link-card]:hover {
+  border-color: color-mix(in oklch, var(--color-primary) 45%, transparent);
+}
+.prose-content a[data-link-card] .card-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.25em;
+  line-height: 1.4;
+  padding: 0.9em 1em;
+}
+.prose-content a[data-link-card] .card-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prose-content a[data-link-card] .card-desc {
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.85em;
+  color: var(--color-muted-foreground);
+}
+.prose-content a[data-link-card] .card-site {
+  margin-top: 0.3em;
+  font-size: 0.78em;
+  color: var(--color-muted-foreground);
+}
+.prose-content a[data-link-card] img {
+  flex: none;
+  width: 11rem;
+  max-width: 35%;
+  height: auto;
+  margin: 0;
+  border-radius: 0;
+  object-fit: cover;
+}
+@media (max-width: 30rem) {
+  .prose-content a[data-link-card] img { display: none; }
+}

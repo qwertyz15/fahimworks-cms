@@ -11,8 +11,9 @@ import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Details, DetailsContent, DetailsSummary } from "@tiptap/extension-details";
 import { mathExtensions } from "./math";
 import { Figure } from "./figure";
-import { Attachment, AudioFile, Callout, DataTextAlign, DetailsTitleEnter, NamedHighlight, TextColorMark, VideoEmbed, VideoFile } from "./rich-nodes";
+import { Attachment, AudioFile, Callout, LinkCard, DataTextAlign, DetailsTitleEnter, NamedHighlight, TextColorMark, VideoEmbed, VideoFile } from "./rich-nodes";
 import { SlashCommand } from "./slash-menu";
+import { NoteLink, NoteLinkSuggestion } from "./note-links";
 
 export const lowlight = createLowlight(common);
 
@@ -44,6 +45,7 @@ export function notebookExtensions() {
     VideoFile,
     AudioFile,
     Attachment,
+    LinkCard,
     DataTextAlign,
     Callout,
     Details.configure({ persist: false }),
@@ -57,5 +59,7 @@ export function notebookExtensions() {
     }),
     CharacterCount,
     SlashCommand,
+    NoteLink,
+    NoteLinkSuggestion,
   ];
 }

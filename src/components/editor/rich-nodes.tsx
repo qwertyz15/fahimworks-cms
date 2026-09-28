@@ -5,7 +5,7 @@ import { Extension, Mark, Node, mergeAttributes } from "@tiptap/core";
 import Highlight from "@tiptap/extension-highlight";
 import TextAlign from "@tiptap/extension-text-align";
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from "@tiptap/react";
-import { AlertTriangle, FileText, Info, Lightbulb, Music, OctagonAlert, Play, Trash2, type LucideIcon } from "lucide-react";
+import { AlertTriangle, FileText, Globe, Info, Lightbulb, Music, OctagonAlert, Play, Trash2, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ALIGNMENTS, CALLOUT_VARIANTS, HIGHLIGHT_COLORS, type CalloutVariant, TEXT_COLORS, embedSrc, parseVideoUrl, type TextColor, type VideoProvider } from "@/lib/editor-shared";
 
@@ -433,6 +433,82 @@ function AudioFileView({ node, updateAttributes, deleteNode, selected, editor }:
       ) : (
         caption && <figcaption>{caption}</figcaption>
       )}
+    </NodeViewWrapper>
+  );
+}
+
+// ── Link preview card (bookmark) ──────────────────────────────────────────
+
+export interface LinkCardAttrs {
+  url: string;
+  title: string;
+  description: string | null;
+  image: string | null;
+  site: string;
+}
+
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    linkCard: { insertLinkCard: (attrs: LinkCardAttrs) => ReturnType };
+  }
+}
+
+/** A clickable preview of a web page. Plain HTML — no third-party iframes or scripts. */
+export const LinkCard = Node.create({
+  name: "linkCard",
+  group: "block",
+  atom: true,
+  draggable: true,
+  addAttributes() {
+    return { url: { default: null }, title: { default: "" }, description: { default: null }, image: { default: null }, site: { default: "" } };
+  },
+  parseHTML() {
+    return [
+      {
+        tag: "a[data-link-card]",
+        getAttrs: (el: HTMLElement) => ({
+          url: el.getAttribute("href"),
+          title: el.querySelector(".card-title")?.textContent ?? "",
+          description: el.querySelector(".card-desc")?.textContent || null,
+          image: el.querySelector("img")?.getAttribute("src") || null,
+          site: el.querySelector(".card-site")?.textContent ?? "",
+        }),
+      },
+    ];
+  },
+  renderHTML({ node }) {
+    const { url, title, description, image, site } = node.attrs as LinkCardAttrs;
+    const text = ["span", { class: "card-text" }, ["span", { class: "card-title" }, title], ...(description ? [["span", { class: "card-desc" }, description]] : []), ["span", { class: "card-site" }, site]];
+    return ["a", { href: url, "data-link-card": "" }, text, ...(image ? [["img", { src: image, alt: "" }]] : [])] as unknown as [string, Record<string, string>, ...unknown[]];
+  },
+  addCommands() {
+    return {
+      insertLinkCard:
+        (attrs) =>
+        ({ commands }) =>
+          commands.insertContent({ type: this.name, attrs }),
+    };
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(LinkCardView);
+  },
+});
+
+function LinkCardView({ node, deleteNode, selected, editor }: ReactNodeViewProps) {
+  const { url, title, description, image, site } = node.attrs as LinkCardAttrs;
+  return (
+    <NodeViewWrapper className={cn("notebook-block relative", selected && "is-selected")} data-drag-handle contentEditable={false}>
+      <div className="link-card flex overflow-hidden rounded-lg border bg-surface" title={url}>
+        <span className="min-w-0 flex-1 p-3">
+          <span className="block truncate text-sm font-semibold">{title}</span>
+          {description && <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">{description}</span>}
+          <span className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground">
+            <Globe className="size-3" /> {site}
+          </span>
+        </span>
+        {image && <img src={image} alt="" referrerPolicy="no-referrer" className="w-36 shrink-0 object-cover max-sm:hidden" />}
+      </div>
+      {editor.isEditable && selected && <RemoveButton onClick={() => deleteNode()} />}
     </NodeViewWrapper>
   );
 }

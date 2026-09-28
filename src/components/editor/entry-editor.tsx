@@ -23,6 +23,7 @@ import { ACCEPTED_IMAGE_TYPES, ACCEPTED_TYPES, AUDIO_ACCEPT, FILE_ACCEPT, fileTy
 import { parseVideoUrl } from "./rich-nodes";
 import { blockBoundary, insertBlock } from "./blocks";
 import { MathDialog } from "./math-dialog";
+import { LinkCardDialog, requestLinkCard } from "./link-card-dialog";
 
 export interface EditableEntry {
   id: string;
@@ -124,6 +125,16 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
           event.preventDefault();
           insertVideoRef.current(video);
           return true;
+        }
+        // A lone link on an empty line: paste it as usual, and offer a preview card.
+        const { $from, empty } = _view.state.selection;
+        if (empty && /^https?:\/\/\S+$/i.test(text) && text.length <= 2000 && $from.parent.type.name === "paragraph" && $from.parent.content.size === 0) {
+          const replaceAt = $from.before();
+          toast("Link pasted", {
+            description: "Show it as a preview card instead?",
+            action: { label: "Make it a card", onClick: () => requestLinkCard({ url: text, replaceAt, auto: true }) },
+            duration: 8000,
+          });
         }
         return false;
       },
@@ -665,6 +676,7 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
       </Dialog>
 
       <MathDialog editor={editor} />
+      <LinkCardDialog editor={editor} />
 
       <Dialog
         open={confirmDelete}
