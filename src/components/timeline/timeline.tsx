@@ -204,8 +204,8 @@ export function Timeline({ items }: { items: TimelineItem[] }) {
           {years.map(([year, entries]) => (
             <div key={year} className="grid gap-4 md:grid-cols-[7rem_1fr] md:gap-8">
               <div className="md:sticky md:top-20 md:self-start">
-                <h3 className="text-3xl font-semibold tracking-tight text-foreground/90 tabular-nums">{year}</h3>
-                <p className="text-xs text-muted-foreground">
+                <h3 className="pt-4 text-lg font-semibold tracking-tight text-foreground/75 tabular-nums sm:pt-5">{year}</h3>
+                <p className="text-[11px] text-muted-foreground">
                   {entries.length} {entries.length === 1 ? "piece" : "pieces"}
                 </p>
               </div>
