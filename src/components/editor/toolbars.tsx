@@ -11,7 +11,6 @@ import {
   AlignJustify,
   AlignLeft,
   AlignRight,
-  Baseline,
   Bold,
   Check,
   Highlighter,
@@ -275,10 +274,22 @@ export function SelectionToolbar({ editor }: { editor: Editor }) {
             <Type />
           </ToolButton>
           <ToolButton label="Text colour" active={Boolean(state.textColor)} onClick={() => setPalette("text")}>
-            <Baseline />
+            {/* "A" over a colour bar: rainbow until a colour is picked, then that colour. */}
+            <span className="flex flex-col items-center leading-none" aria-hidden>
+              <span className="text-[15px] font-bold" {...(state.textColor ? { "data-text-color": state.textColor } : {})}>
+                A
+              </span>
+              <span
+                className={cn("mt-0.5 h-[3px] w-4 rounded-full", !state.textColor && "bg-[linear-gradient(90deg,#ef4444,#f59e0b,#22c55e,#3b82f6,#a855f7)]")}
+                {...(state.textColor ? { "data-text-color": state.textColor, "data-color-bar": "" } : {})}
+              />
+            </span>
           </ToolButton>
           <ToolButton label="Highlight" active={Boolean(state.highlight)} onClick={() => setPalette("highlight")}>
-            <Highlighter />
+            <span className="flex flex-col items-center leading-none" aria-hidden>
+              <Highlighter />
+              <span className="mt-0.5 h-[3px] w-4 rounded-full" data-swatch={state.highlight ?? "yellow"} />
+            </span>
           </ToolButton>
           <ToolButton label="Alignment" active={state.align !== "left"} onClick={() => setPalette("align")}>
             {(() => {

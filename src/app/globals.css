@@ -879,3 +879,6 @@ mark[data-color="orange"], [data-swatch="orange"] { background: oklch(0.91 0.09 
 [data-font="condensed"] { font-family: var(--font-condensed-src), "Arial Narrow", sans-serif; }
 [data-font="book"] { font-family: var(--font-book-src), Garamond, ui-serif, serif; font-size: 1.08em; }
 [data-font="display"] { font-family: var(--font-display-src), ui-serif, serif; }
+
+/* Toolbar: the text-colour button's bar shows the chosen colour. */
+[data-color-bar] { background: currentColor; }
