@@ -111,7 +111,7 @@ function Entry({ item }: { item: TimelineItem }) {
             <div className="flex flex-wrap gap-1.5 pt-1">
               {item.tags.slice(0, 5).map((t) => (
                 <span key={t.slug} className="rounded-full border bg-background/60 px-2 py-0.5 text-[11px] text-muted-foreground">
-                  #{t.name}
+                  {t.name}
                 </span>
               ))}
             </div>
