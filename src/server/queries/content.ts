@@ -4,6 +4,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import type { ContentStatus, ContentType } from "@/generated/prisma/enums";
 import { CONTENT_TYPES } from "@/lib/validation";
 import { requireAdmin } from "@/server/auth/guards";
+import { writtenPostUrl } from "@/lib/timeline";
 
 export async function getDashboardStats() {
   await requireAdmin();
@@ -62,6 +63,12 @@ export async function getDashboardStats() {
 }
 
 /** Personal libraries are small; load them whole so type tabs filter instantly in the browser. */
+/** Where an item can be viewed publicly: the original page, or the article page of a published Notebook entry. */
+function withPublicUrl<T extends { url: string | null; source: string; status: string; slug?: string }>(item: T) {
+  const publicUrl = item.url ?? (item.status === "PUBLISHED" && item.slug ? writtenPostUrl(item.slug) : null);
+  return { ...item, publicUrl };
+}
+
 export const LIBRARY_LIMIT = 300;
 
 /** Items for the dashboard library (grid / list), optionally filtered by type. */
@@ -78,6 +85,7 @@ export async function listLibrary(type?: ContentType) {
         title: true,
         url: true,
         source: true,
+        slug: true,
         type: true,
         status: true,
         thumbnail: true,
@@ -91,7 +99,7 @@ export async function listLibrary(type?: ContentType) {
     }),
     db.content.count({ where }),
   ]);
-  return { items, total };
+  return { items: items.map(withPublicUrl), total };
 }
 
 export type LibraryItem = Awaited<ReturnType<typeof listLibrary>>["items"][number];
@@ -142,6 +150,7 @@ export async function listContent(params: ContentListParams) {
         title: true,
         url: true,
         source: true,
+        slug: true,
         type: true,
         status: true,
         approvalStatus: true,
@@ -152,7 +161,7 @@ export async function listContent(params: ContentListParams) {
     }),
     db.content.count({ where }),
   ]);
-  return { items, total, page, pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
+  return { items: items.map(withPublicUrl), total, page, pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
 }
 
 export async function getContentDetail(id: string) {

@@ -110,9 +110,16 @@ export default async function ContentPage({ searchParams }: PageProps<"/dashboar
                           <ExternalLink className="size-3 shrink-0" />
                         </a>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[13px] text-muted-foreground">
-                          <NotebookPen className="size-3.5" /> Notebook
-                        </span>
+                        item.publicUrl ? (
+                          <a href={item.publicUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
+                            <NotebookPen className="size-3.5 shrink-0" /> <span className="truncate">Notebook article</span>
+                            <ExternalLink className="size-3 shrink-0" />
+                          </a>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[13px] text-muted-foreground">
+                            <NotebookPen className="size-3.5" /> Notebook
+                          </span>
+                        )
                       )}
                     </td>
                     <td className="px-3 py-2.5"><StatusBadge status={item.status} /></td>

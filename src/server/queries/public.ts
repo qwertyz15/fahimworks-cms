@@ -1,5 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
+import { writtenPostUrl } from "@/lib/timeline";
 import { db } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import type { ContentType } from "@/generated/prisma/enums";
@@ -9,6 +10,8 @@ export const publicSelect = {
   id: true,
   slug: true,
   title: true,
+  subtitle: true,
+  source: true,
   url: true,
   type: true,
   description: true,
@@ -44,10 +47,34 @@ export async function listPublished(opts: { type?: ContentType; tag?: string; fe
 }
 
 export function getPublishedBySlug(slug: string) {
-  return db.content.findFirst({ where: { slug, status: "PUBLISHED" }, select: publicSelect });
+  return db.content.findFirst({ where: { slug, status: "PUBLISHED" }, select: { ...publicSelect, contentHtml: true } });
+}
+
+/** Public shape: Notebook entries get their article URL; `bodyHtml` only for Notebook entries when requested. */
+export function toPublicItem<T extends PublicContent & { contentHtml?: string | null }>(item: T, opts: { body?: boolean } = {}) {
+  const { contentHtml, ...rest } = item;
+  return {
+    ...rest,
+    url: item.url ?? writtenPostUrl(item.slug),
+    ...(opts.body && item.source === "WRITTEN" ? { bodyHtml: contentHtml ?? "" } : {}),
+  };
 }
 
 export const TIMELINE_TAG = "timeline";
+
+/** A published Notebook article for /p/<slug>. Cached with the timeline. */
+export const getPublishedArticle = unstable_cache(
+  async (slug: string) =>
+    db.content.findFirst({
+      where: { slug, status: "PUBLISHED", source: "WRITTEN" },
+      select: { ...publicSelect, contentHtml: true, wordCount: true, updatedAt: true },
+    }),
+  ["published-article"],
+  { tags: [TIMELINE_TAG], revalidate: 3600 },
+);
+
+export type PublishedArticle = NonNullable<Awaited<ReturnType<typeof getPublishedArticle>>>;
+
 
 /** Everything the public timeline shows. Cached; invalidated by updateTag(TIMELINE_TAG) on changes. */
 /** The date the timeline shows: original publish date, else when it was published here. */

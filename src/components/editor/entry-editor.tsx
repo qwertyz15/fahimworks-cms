@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor, type JSONContent } from "@tiptap/react";
-import { AlertCircle, ArrowLeft, Check, Loader2, Trash2 } from "lucide-react";
-import { deleteEntryAction, saveEntryAction } from "@/server/actions/notebook";
+import { AlertCircle, ArrowLeft, ArrowUpRight, Check, EyeOff, Loader2, Send, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { deleteEntryAction, publishEntryAction, saveEntryAction, unpublishEntryAction } from "@/server/actions/notebook";
+import type { SavedEntry } from "@/server/services/notebook";
 import { TYPE_META, TYPE_ORDER } from "@/components/dashboard/content-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,7 +39,8 @@ export interface EditableEntry {
 const AUTOSAVE_MS = 10_000;
 const timeFmt = new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit" });
 
-export function EntryEditor({ entry }: { entry: EditableEntry | null }) {
+/** `articleBaseUrl`: public address prefix for published entries, e.g. https://timeline.fahimworks.dev/p/ */
+export function EntryEditor({ entry, articleBaseUrl }: { entry: EditableEntry | null; articleBaseUrl: string }) {
   const [id, setId] = useState(entry?.id);
   const [status, setStatus] = useState(entry?.status ?? "DRAFT");
   const [title, setTitle] = useState(entry && entry.title !== "Untitled" ? entry.title : "");
@@ -55,7 +58,9 @@ export function EntryEditor({ entry }: { entry: EditableEntry | null }) {
   const [savedAt, setSavedAt] = useState<string | null>(entry?.updatedAt ?? null);
   const [words, setWords] = useState(entry?.wordCount ?? 0);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const del = useRunAction();
+  const unpub = useRunAction();
 
   const published = status === "PUBLISHED";
   const changeCount = useRef(0);
@@ -87,6 +92,43 @@ export function EntryEditor({ entry }: { entry: EditableEntry | null }) {
     values.current = { id, title, subtitle, type, tags, slug, summary, featured };
   });
 
+  type Values = typeof values.current;
+
+  const buildPayload = useCallback(
+    (v: Values) => {
+      if (!editor) throw new Error("Editor not ready");
+      return {
+        id: v.id,
+        title: v.title,
+        subtitle: v.subtitle,
+        type: v.type,
+        tags: v.tags,
+        slug: v.slug,
+        summary: v.summary,
+        featured: v.featured,
+        // Plain JSON only: ProseMirror builds some attrs with Object.create(null), which
+        // Server Actions would otherwise send as opaque client references.
+        body: JSON.parse(JSON.stringify(editor.getJSON())),
+        html: editor.getHTML(),
+      };
+    },
+    [editor],
+  );
+
+  /** Reflect a successful save (or publish) in local state. */
+  const applySaved = useCallback((saved: SavedEntry, v: Values, marker: number) => {
+    if (!v.id) {
+      values.current = { ...values.current, id: saved.id };
+      setId(saved.id);
+      // Give the new entry its real address without remounting the editor.
+      window.history.replaceState(null, "", `/dashboard/notebook/${saved.id}`);
+    }
+    setSlug(saved.slug);
+    setStatus(saved.status);
+    setSavedAt(saved.savedAt);
+    if (changeCount.current === marker) setDirty(false);
+  }, []);
+
   const save = useCallback(async () => {
     if (!editor) return;
     if (inFlight.current) {
@@ -104,33 +146,9 @@ export function EntryEditor({ entry }: { entry: EditableEntry | null }) {
 
       setError(null);
       const marker = changeCount.current;
-      const res = await saveEntryAction({
-        id: v.id,
-        title: v.title,
-        subtitle: v.subtitle,
-        type: v.type,
-        tags: v.tags,
-        slug: v.slug,
-        summary: v.summary,
-        featured: v.featured,
-        // Plain JSON only: ProseMirror builds some attrs with Object.create(null), which
-        // Server Actions would otherwise send as opaque client references.
-        body: JSON.parse(JSON.stringify(editor.getJSON())),
-        html: editor.getHTML(),
-      });
-
+      const res = await saveEntryAction(buildPayload(v));
       if (res.ok && res.data) {
-        const saved = res.data;
-        if (!v.id) {
-          values.current = { ...values.current, id: saved.id };
-          setId(saved.id);
-          // Give the new entry its real address without remounting the editor.
-          window.history.replaceState(null, "", `/dashboard/notebook/${saved.id}`);
-        }
-        setSlug(saved.slug);
-        setStatus(saved.status);
-        setSavedAt(saved.savedAt);
-        if (changeCount.current === marker) setDirty(false);
+        applySaved(res.data, v, marker);
       } else if (!res.ok) {
         setError(res.error || "Could not save.");
         queued.current = false;
@@ -138,7 +156,29 @@ export function EntryEditor({ entry }: { entry: EditableEntry | null }) {
     } while (queued.current);
     inFlight.current = false;
     setSaving(false);
-  }, [editor]);
+  }, [editor, buildPayload, applySaved]);
+
+  /** Save the current state and publish it in one step. */
+  const publish = useCallback(async () => {
+    if (!editor) return;
+    // Let any running autosave finish first so the two never overlap.
+    while (inFlight.current) await new Promise((r) => setTimeout(r, 100));
+    inFlight.current = true;
+    setPublishing(true);
+    setError(null);
+    const v = values.current;
+    const marker = changeCount.current;
+    const res = await publishEntryAction(buildPayload(v));
+    inFlight.current = false;
+    setPublishing(false);
+    if (res.ok && res.data) {
+      applySaved(res.data, v, marker);
+      const url = `${articleBaseUrl}${res.data.slug}`;
+      toast.success("Published to your timeline.", { action: { label: "View", onClick: () => window.open(url, "_blank", "noopener") } });
+    } else if (!res.ok) {
+      toast.error(res.error || "Could not publish.");
+    }
+  }, [editor, buildPayload, applySaved, articleBaseUrl]);
 
   // Autosave drafts shortly after typing stops. Published entries save only on demand.
   useEffect(() => {
@@ -220,7 +260,28 @@ export function EntryEditor({ entry }: { entry: EditableEntry | null }) {
           <span className="hidden text-xs text-muted-foreground sm:inline">
             {words.toLocaleString()} words · {Math.max(words ? 1 : 0, Math.round(words / 230))} min read
           </span>
-          <Button size="sm" variant={isSaved ? "outline" : "primary"} loading={saving} disabled={isSaved} onClick={() => void save()} title="Save (Ctrl+S)">
+          {published && (
+            <>
+              <a
+                href={`${articleBaseUrl}${slug}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-[13px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                View live <ArrowUpRight className="size-3.5" />
+              </a>
+              <Button
+                size="sm"
+                variant="ghost"
+                loading={unpub.pending}
+                onClick={() => id && unpub.run(() => unpublishEntryAction(id), { onSuccess: () => setStatus("DRAFT") })}
+                title="Remove from the timeline (keeps it as a draft)"
+              >
+                <EyeOff /> Unpublish
+              </Button>
+            </>
+          )}
+          <Button size="sm" variant={isSaved || !published ? "outline" : "primary"} loading={saving} disabled={isSaved} onClick={() => void save()} title="Save (Ctrl+S)">
             {isSaved ? (
               <>
                 <Check /> Saved
@@ -231,6 +292,11 @@ export function EntryEditor({ entry }: { entry: EditableEntry | null }) {
               "Save"
             )}
           </Button>
+          {!published && (
+            <Button size="sm" loading={publishing} disabled={saving} onClick={() => void publish()} title="Save and publish to your timeline">
+              <Send /> Publish
+            </Button>
+          )}
         </div>
       </div>
 

@@ -73,7 +73,7 @@ function FeaturedCard({ item, large }: { item: TimelineItem; large?: boolean }) 
           <ArrowUpRight className="mt-1 size-4 shrink-0 opacity-50 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100" />
         </h3>
         {summary && <p className={cn("text-sm leading-relaxed text-muted-foreground", large ? "line-clamp-4" : "line-clamp-3")}>{summary}</p>}
-        <p className="mt-auto text-xs text-muted-foreground">{item.url ? (item.siteName ?? displayHost(item.url)) : "Notebook"}</p>
+        {item.url && <p className="mt-auto text-xs text-muted-foreground">{item.siteName ?? displayHost(item.url)}</p>}
       </div>
     </a>
   );
@@ -99,7 +99,7 @@ function Entry({ item }: { item: TimelineItem }) {
               </time>
             )}
             <TypeLabel type={item.type} />
-            <span>{item.url ? (item.siteName ?? displayHost(item.url)) : "Notebook"}</span>
+            {item.url && <span>{item.siteName ?? displayHost(item.url)}</span>}
             {item.readingMinutes ? (
               <span className="inline-flex items-center gap-1">
                 <Clock className="size-3" /> {item.readingMinutes} min read

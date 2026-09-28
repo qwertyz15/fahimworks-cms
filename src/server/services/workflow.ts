@@ -17,7 +17,9 @@ import { db } from "@/lib/db";
  */
 
 export const TRANSITIONS: Record<ContentStatus, readonly ContentStatus[]> = {
-  DRAFT: ["AWAITING_APPROVAL"],
+  // DRAFT → PUBLISHED is used by Notebook entries (no approval step); imported
+  // items reach PUBLISHED only via AWAITING_APPROVAL (services/content.approveContent).
+  DRAFT: ["AWAITING_APPROVAL", "PUBLISHED"],
   VERIFICATION_PENDING: ["AWAITING_APPROVAL", "DRAFT"],
   VERIFIED: ["AWAITING_APPROVAL", "DRAFT", "REJECTED"],
   AWAITING_APPROVAL: ["PUBLISHED", "REJECTED", "DRAFT", "AWAITING_APPROVAL"],

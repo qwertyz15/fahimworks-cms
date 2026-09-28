@@ -61,7 +61,7 @@ function GridCard({ item }: { item: LibraryItem }) {
           <meta.icon className="size-3" /> {meta.label}
           {item.source === "WRITTEN" && <span className="text-muted-foreground">· Notebook</span>}
         </span>
-        {item.url && <OpenOriginal url={item.url} className="absolute top-2 right-2 bg-background/90 text-foreground shadow-sm backdrop-blur hover:bg-background" />}
+        {item.publicUrl && <OpenOriginal url={item.publicUrl} className="absolute top-2 right-2 bg-background/90 text-foreground shadow-sm backdrop-blur hover:bg-background" />}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-3.5">
         {/* Stretched link: the whole card opens the item; the ↗ button stays clickable above it. */}
@@ -125,7 +125,7 @@ function ListRows({ items }: { items: LibraryItem[] }) {
               </span>
               <span className="hidden truncate text-[13px] text-muted-foreground md:block">{item.url ? (item.siteName ?? displayHost(item.url)) : "Notebook"}</span>
               <span className="hidden text-right text-[13px] whitespace-nowrap text-muted-foreground md:block">{formatDate(item.updatedAt)}</span>
-              {item.url ? <OpenOriginal url={item.url} className="justify-self-end" /> : <span className="size-7" aria-hidden />}
+              {item.publicUrl ? <OpenOriginal url={item.publicUrl} className="justify-self-end" /> : <span className="size-7" aria-hidden />}
             </li>
           );
         })}

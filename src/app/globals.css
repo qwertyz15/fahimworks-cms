@@ -365,3 +365,63 @@
 .dark .hljs-meta {
   color: #e3b341;
 }
+
+/* ── Public article (Notebook entries) ─────────────────────────── */
+.prose-article {
+  font-size: 1.0625rem;
+  line-height: 1.8;
+}
+@media (min-width: 640px) {
+  .prose-article {
+    font-size: 1.125rem;
+  }
+}
+.prose-article > * + * {
+  margin-top: 1.15em;
+}
+.prose-article :is(h1, h2, h3) {
+  margin-top: 1.9em;
+  scroll-margin-top: 2rem;
+}
+.prose-article h1 {
+  font-size: 1.75rem;
+}
+.prose-article h2 {
+  font-size: 1.45rem;
+}
+.prose-article h3 {
+  font-size: 1.2rem;
+}
+.prose-article pre {
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+.prose-article table {
+  display: table;
+  width: 100%;
+}
+.prose-article th {
+  background: var(--color-surface-2);
+  font-weight: 600;
+}
+.prose-article th p,
+.prose-article td p {
+  margin: 0;
+}
+.prose-article hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 2.5em 0;
+}
+.prose-article blockquote {
+  font-style: italic;
+}
+.prose-article img {
+  margin-left: auto;
+  margin-right: auto;
+}
+/* Keep empty table cells a normal row height. */
+.prose-article :is(td, th) p:empty::after,
+.notebook-editor :is(td, th) p:empty::after {
+  content: "\00a0";
+}

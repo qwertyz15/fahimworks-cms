@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { JSONContent } from "@tiptap/react";
 import { EntryEditor } from "@/components/editor/entry-editor";
+import { writtenPostUrl } from "@/lib/timeline";
 import { getNotebookEntry } from "@/server/queries/content";
 import { deriveFields } from "@/server/services/notebook-html";
 
@@ -19,6 +20,7 @@ export default async function EditEntryPage({ params }: PageProps<"/dashboard/no
   return (
     <EntryEditor
       key={entry.id}
+      articleBaseUrl={writtenPostUrl("")}
       entry={{
         id: entry.id,
         title: entry.title,

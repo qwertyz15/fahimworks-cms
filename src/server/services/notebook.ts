@@ -6,12 +6,13 @@ import type { Prisma } from "@/generated/prisma/client";
 import { audit } from "./audit";
 import { tagConnect, uniqueSlug } from "./content-helpers";
 import { ContentError } from "./content";
+import { transition, WorkflowError } from "./workflow";
 import { deriveFields, renderNotebookHtml } from "./notebook-html";
 
 /**
  * Notebook: posts written in the dashboard editor (source = WRITTEN).
  * One version per entry — each save overwrites the row. Drafts are private;
- * publishing is added in services/notebook-publish (step 2).
+ * publishing makes the entry public on the timeline and its article page.
  */
 
 export interface SaveEntryInput {
@@ -118,4 +119,27 @@ export async function deleteEntry(id: string, actorId: string) {
   if (!entry || entry.source !== "WRITTEN") throw new ContentError("Notebook entry not found.");
   await db.content.delete({ where: { id } });
   await audit({ actorId, action: "content.deleted", targetType: "content", targetId: id, metadata: { title: entry.title, source: "WRITTEN" } });
+}
+
+/** Draft → Published. Needs a real title and some content; sets the publish date if unset. */
+export async function publishEntry(id: string, actorId: string) {
+  const entry = await db.content.findUnique({
+    where: { id },
+    select: { id: true, source: true, status: true, title: true, wordCount: true, publishDate: true },
+  });
+  if (!entry || entry.source !== "WRITTEN") throw new ContentError("Notebook entry not found.");
+  if (entry.status === "PUBLISHED") return;
+  if (!entry.title.trim() || entry.title === UNTITLED) throw new WorkflowError("Add a title before publishing.");
+  if (!entry.wordCount) throw new WorkflowError("Write something before publishing.");
+  await transition(id, entry.status, "PUBLISHED", { data: { publishDate: entry.publishDate ?? new Date() } });
+  await audit({ actorId, action: "content.approved", targetType: "content", targetId: id, metadata: { source: "WRITTEN" } });
+}
+
+/** Published → Draft (removed from the timeline and its article page). */
+export async function unpublishEntry(id: string, actorId: string) {
+  const entry = await db.content.findUnique({ where: { id }, select: { source: true, status: true } });
+  if (!entry || entry.source !== "WRITTEN") throw new ContentError("Notebook entry not found.");
+  if (entry.status !== "PUBLISHED") return;
+  await transition(id, "PUBLISHED", "DRAFT");
+  await audit({ actorId, action: "content.unpublished", targetType: "content", targetId: id, metadata: { source: "WRITTEN" } });
 }

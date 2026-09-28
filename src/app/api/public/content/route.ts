@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { CONTENT_TYPES } from "@/lib/validation";
 import { publicApiGuard, publicOptions } from "@/lib/http/public-api";
-import { listPublished } from "@/server/queries/public";
+import { listPublished, toPublicItem } from "@/server/queries/public";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   const { type, tag, featured, limit, cursor } = parsed.data;
   try {
     const result = await listPublished({ type, tag, featured: featured === "true", limit, cursor });
-    return NextResponse.json(result, { headers: guard.headers });
+    return NextResponse.json({ ...result, items: result.items.map((i) => toPublicItem(i)) }, { headers: guard.headers });
   } catch {
     // An unknown cursor id makes Prisma throw — treat as bad request.
     return NextResponse.json({ error: "Invalid cursor" }, { status: 400, headers: guard.headers });

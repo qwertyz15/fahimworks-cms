@@ -47,6 +47,11 @@ function timelineHostResponse(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (pathname === "/") return withCsp(req, new URL("/timeline", req.url));
   if (pathname === "/timeline") return NextResponse.redirect(new URL("/", req.url), 308);
+  // Notebook articles: /p/<slug> is canonical on this host.
+  const article = pathname.match(/^\/p\/([a-z0-9-]{1,120})\/?$/);
+  if (article) return withCsp(req, new URL(`/timeline/p/${article[1]}`, req.url));
+  const longForm = pathname.match(/^\/timeline\/p\/([a-z0-9-]{1,120})\/?$/);
+  if (longForm) return NextResponse.redirect(new URL(`/p/${longForm[1]}`, req.url), 308);
   if (pathname.startsWith("/_next/")) return withCsp(req);
   return new NextResponse("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
 }
