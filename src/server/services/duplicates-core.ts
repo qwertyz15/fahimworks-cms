@@ -8,7 +8,7 @@ export interface DuplicateWarning {
   kind: DuplicateKind;
   contentId: string;
   title: string;
-  url: string;
+  url: string | null;
   /** 0..1 similarity. */
   score: number;
   detail: string;
@@ -17,7 +17,7 @@ export interface DuplicateWarning {
 export interface DuplicateCandidate {
   id: string;
   title: string;
-  url: string;
+  url: string | null;
   contentHash: string | null;
   simhash: string | null;
 }

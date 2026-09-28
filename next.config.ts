@@ -22,7 +22,8 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   experimental: {
     serverActions: {
-      bodySizeLimit: "1mb",
+      // Notebook saves send the editor document + HTML (each capped at 2 MB in validation).
+      bodySizeLimit: "4mb",
       // Server Actions reject requests whose Origin differs from Host (CSRF).
       // Add reverse-proxy hostnames here if Host is rewritten.
       allowedOrigins,

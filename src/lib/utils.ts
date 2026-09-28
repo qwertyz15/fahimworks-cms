@@ -31,7 +31,8 @@ export function truncate(value: string, max: number): string {
 }
 
 /** Human readable host for display, e.g. "blog.example.com". */
-export function displayHost(url: string): string {
+export function displayHost(url: string | null | undefined): string {
+  if (!url) return "";
   try {
     return new URL(url).host.replace(/^www\./, "");
   } catch {

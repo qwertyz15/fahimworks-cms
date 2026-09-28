@@ -55,6 +55,9 @@ export async function runExtraction(contentId: string, actorId: string): Promise
     getSettings(),
   ]);
   if (!content) throw new WorkflowError("Content not found.");
+  if (content.source === "WRITTEN" || !content.url) {
+    throw new WorkflowError("Notebook entries are written here, not extracted from a URL.");
+  }
   if (content.status === "REJECTED") {
     throw new WorkflowError("Reopen this item before extracting it again.");
   }

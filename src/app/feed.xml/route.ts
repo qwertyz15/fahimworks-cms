@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { listPublished } from "@/server/queries/public";
 import { getSettings } from "@/server/services/settings";
+import { writtenPostUrl } from "@/lib/timeline";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ ${items
   .map(
     (i) => `<item>
 <title>${esc(i.title)}</title>
-<link>${esc(i.url)}</link>
+<link>${esc(i.url ?? writtenPostUrl(i.slug))}</link>
 <guid isPermaLink="false">${esc(i.id)}</guid>
 <pubDate>${(i.publishDate ?? i.publishedAt ?? new Date()).toUTCString()}</pubDate>
 ${i.author ? `<dc:creator>${esc(i.author)}</dc:creator>` : ""}

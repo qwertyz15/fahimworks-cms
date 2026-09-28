@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { ContentEditForm } from "@/components/content/content-edit-form";
 import { PageHeader } from "@/components/ui/misc";
@@ -12,6 +12,8 @@ export default async function EditContentPage({ params }: PageProps<"/dashboard/
   const { id } = await params;
   const content = await getContentDetail(id);
   if (!content) notFound();
+  // Notebook entries are edited in the Notebook editor, not here.
+  if (content.source === "WRITTEN" || !content.url) redirect(`/dashboard/notebook/${content.id}`);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">

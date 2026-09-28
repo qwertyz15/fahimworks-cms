@@ -3,8 +3,9 @@ import { notFound } from "next/navigation";
 import { Globe, Mail, Rss } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { GithubIcon, LinkedinIcon, XIcon } from "@/components/timeline/brand-icons";
-import { Timeline } from "@/components/timeline/timeline";
-import { timelineUrl } from "@/lib/timeline";
+import { Timeline, type TimelineItem as TimelineItemWithLink } from "@/components/timeline/timeline";
+import { headers } from "next/headers";
+import { isTimelineHost, timelineUrl } from "@/lib/timeline";
 import { TYPE_META, TYPE_ORDER } from "@/components/dashboard/content-types";
 import { getTimelineItems } from "@/server/queries/public";
 import { getSettings } from "@/server/services/settings";
@@ -62,7 +63,14 @@ function ProfileLinks({ links, compact }: { links: ProfileLink[]; compact?: bool
 export default async function TimelinePage() {
   const { s, name, tagline } = await profile();
   if (!s.timelineEnabled) notFound();
-  const items = await getTimelineItems();
+  // Notebook articles live at /p/<slug> on the timeline host, /timeline/p/<slug> elsewhere.
+  const h = await headers();
+  const base = isTimelineHost(h.get("x-forwarded-host") ?? h.get("host")) ? "" : "/timeline";
+  const items: TimelineItemWithLink[] = (await getTimelineItems()).map((i) => ({
+    ...i,
+    href: i.url ?? `${base}/p/${i.slug}`,
+    external: Boolean(i.url),
+  }));
 
   const years = items.flatMap((i) => {
     const d = i.publishDate ?? i.publishedAt;

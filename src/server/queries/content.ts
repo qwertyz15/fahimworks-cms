@@ -77,6 +77,7 @@ export async function listLibrary(type?: ContentType) {
         id: true,
         title: true,
         url: true,
+        source: true,
         type: true,
         status: true,
         thumbnail: true,
@@ -140,6 +141,7 @@ export async function listContent(params: ContentListParams) {
         id: true,
         title: true,
         url: true,
+        source: true,
         type: true,
         status: true,
         approvalStatus: true,
@@ -175,3 +177,41 @@ export async function getContentHistory(id: string) {
 }
 
 export type ContentDetail = NonNullable<Awaited<ReturnType<typeof getContentDetail>>>;
+
+/** Notebook entries (WRITTEN), newest edits first. */
+export async function listNotebook() {
+  await requireAdmin();
+  return db.content.findMany({
+    where: { source: "WRITTEN" },
+    orderBy: { updatedAt: "desc" },
+    take: 500,
+    select: { id: true, title: true, subtitle: true, type: true, status: true, wordCount: true, readingMinutes: true, summary: true, updatedAt: true, publishedAt: true },
+  });
+}
+
+/** One Notebook entry for the editor. */
+export async function getNotebookEntry(id: string) {
+  await requireAdmin();
+  return db.content.findFirst({
+    where: { id, source: "WRITTEN" },
+    select: {
+      id: true,
+      title: true,
+      subtitle: true,
+      type: true,
+      status: true,
+      slug: true,
+      summary: true,
+      featured: true,
+      body: true,
+      contentHtml: true,
+      wordCount: true,
+      readingMinutes: true,
+      updatedAt: true,
+      publishedAt: true,
+      tags: { select: { name: true }, orderBy: { name: "asc" } },
+    },
+  });
+}
+
+export type NotebookEntry = NonNullable<Awaited<ReturnType<typeof getNotebookEntry>>>;

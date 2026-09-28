@@ -153,3 +153,28 @@ export function fieldErrors(error: z.ZodError): Record<string, string> {
   }
   return out;
 }
+
+/** Max size of a Notebook entry's editor document / HTML (each). */
+export const NOTEBOOK_MAX_BYTES = 2 * 1024 * 1024;
+
+export const saveEntrySchema = z.object({
+  id: z.string().min(1).max(64).optional(),
+  title: z.string().max(300).default(""),
+  subtitle: trimmed(300).transform((v) => v || null).nullable().default(null),
+  type: z.enum(CONTENT_TYPES).default("BLOG"),
+  tags: tagsSchema,
+  slug: z
+    .string()
+    .trim()
+    .max(80)
+    .transform((v) => v || null)
+    .nullable()
+    .default(null),
+  summary: trimmed(1000).transform((v) => v || null).nullable().default(null),
+  featured: z.boolean().default(false),
+  body: z
+    .record(z.string(), z.unknown())
+    .refine((v) => v.type === "doc", "Invalid editor document.")
+    .refine((v) => JSON.stringify(v).length <= NOTEBOOK_MAX_BYTES, "This entry is too large to save (max 2 MB)."),
+  html: z.string().max(NOTEBOOK_MAX_BYTES, "This entry is too large to save (max 2 MB)."),
+});

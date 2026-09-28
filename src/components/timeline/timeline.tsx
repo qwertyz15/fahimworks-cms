@@ -6,7 +6,15 @@ import { ArrowUpRight, Clock, Sparkles } from "lucide-react";
 import type { ContentType } from "@/generated/prisma/enums";
 import { cn, displayHost } from "@/lib/utils";
 import { TYPE_META, TYPE_ORDER } from "@/components/dashboard/content-types";
-import type { TimelineItem } from "@/server/queries/public";
+import type { TimelineItem as BaseItem } from "@/server/queries/public";
+
+/** A timeline item plus where it opens: the original page (imported) or its article page (Notebook). */
+export type TimelineItem = BaseItem & { href: string; external: boolean };
+
+/** Link props: imported work opens in a new tab, Notebook articles in the same tab. */
+function linkProps(item: TimelineItem) {
+  return item.external ? { href: item.href, target: "_blank", rel: "noopener noreferrer" } : { href: item.href };
+}
 
 const monthDay = new Intl.DateTimeFormat("en", { month: "short", day: "numeric" });
 const fullDate = new Intl.DateTimeFormat("en", { year: "numeric", month: "long", day: "numeric" });
@@ -39,9 +47,7 @@ function FeaturedCard({ item, large }: { item: TimelineItem; large?: boolean }) 
   const summary = item.summary ?? item.description;
   return (
     <a
-      href={item.url}
-      target="_blank"
-      rel="noopener noreferrer"
+      {...linkProps(item)}
       className={cn(
         "group reveal relative flex flex-col overflow-hidden rounded-2xl border bg-surface shadow-card transition duration-300 hover:-translate-y-1 hover:border-primary/40 hover:shadow-pop",
         large && "sm:col-span-2 sm:flex-row",
@@ -67,7 +73,7 @@ function FeaturedCard({ item, large }: { item: TimelineItem; large?: boolean }) 
           <ArrowUpRight className="mt-1 size-4 shrink-0 opacity-50 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100" />
         </h3>
         {summary && <p className={cn("text-sm leading-relaxed text-muted-foreground", large ? "line-clamp-4" : "line-clamp-3")}>{summary}</p>}
-        <p className="mt-auto text-xs text-muted-foreground">{item.siteName ?? displayHost(item.url)}</p>
+        <p className="mt-auto text-xs text-muted-foreground">{item.url ? (item.siteName ?? displayHost(item.url)) : "Notebook"}</p>
       </div>
     </a>
   );
@@ -82,9 +88,7 @@ function Entry({ item }: { item: TimelineItem }) {
       {/* Rail dot, coloured by type */}
       <span className={cn("absolute top-6 left-0 size-3 -translate-x-1/2 rounded-full ring-4 ring-background", meta.dot)} aria-hidden />
       <a
-        href={item.url}
-        target="_blank"
-        rel="noopener noreferrer"
+        {...linkProps(item)}
         className="group flex gap-5 rounded-2xl border border-transparent p-4 transition duration-300 hover:-translate-y-0.5 hover:border-border hover:bg-surface hover:shadow-card sm:p-5"
       >
         <div className="min-w-0 flex-1 space-y-2">
@@ -95,7 +99,7 @@ function Entry({ item }: { item: TimelineItem }) {
               </time>
             )}
             <TypeLabel type={item.type} />
-            <span>{item.siteName ?? displayHost(item.url)}</span>
+            <span>{item.url ? (item.siteName ?? displayHost(item.url)) : "Notebook"}</span>
             {item.readingMinutes ? (
               <span className="inline-flex items-center gap-1">
                 <Clock className="size-3" /> {item.readingMinutes} min read

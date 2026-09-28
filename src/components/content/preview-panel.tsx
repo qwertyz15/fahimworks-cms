@@ -14,7 +14,7 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
-export function PreviewPanel({ content, screenshot }: { content: ContentDetail; screenshot: string | null }) {
+export function PreviewPanel({ content, screenshot }: { content: ContentDetail & { url: string }; screenshot: string | null }) {
   const images = asStringArray(content.images);
   const metadata = asRecord(content.metadata);
   const extracted = content.extractionStatus === "SUCCEEDED";

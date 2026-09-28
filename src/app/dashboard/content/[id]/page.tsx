@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, CheckCircle2, ExternalLink, Info } from "lucide-react";
 import { ApprovalBadge, StatusBadge, TypeBadge } from "@/components/content/badges";
 import { DecisionBar } from "@/components/content/decision-bar";
@@ -37,6 +37,8 @@ export default async function ContentDetailPage({ params, searchParams }: PagePr
   const sp = await searchParams;
   const [content, history] = await Promise.all([getContentDetail(id), getContentHistory(id)]);
   if (!content) notFound();
+  // Notebook entries are edited in the Notebook editor, not here.
+  if (content.source === "WRITTEN" || !content.url) redirect(`/dashboard/notebook/${content.id}`);
 
   const warnings = (Array.isArray(content.duplicateWarnings) ? content.duplicateWarnings : []) as unknown as DuplicateWarning[];
 
@@ -97,7 +99,7 @@ export default async function ContentDetailPage({ params, searchParams }: PagePr
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <PreviewPanel content={content} screenshot={screenshotUrl(content.url)} />
+          <PreviewPanel content={{ ...content, url: content.url }} screenshot={screenshotUrl(content.url)} />
         </div>
 
         <aside className="space-y-6">

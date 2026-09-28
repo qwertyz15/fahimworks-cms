@@ -23,6 +23,11 @@ function TypeIconTile({ type, className }: { type: ContentType; className?: stri
   );
 }
 
+/** Notebook entries open in the editor; imported items open their detail page. */
+function itemHref(item: LibraryItem) {
+  return item.source === "WRITTEN" ? `/dashboard/notebook/${item.id}` : `/dashboard/content/${item.id}`;
+}
+
 /** ↗ button that opens the original page in a new tab (sits above the card's own link). */
 function OpenOriginal({ url, className }: { url: string; className?: string }) {
   return (
@@ -54,13 +59,14 @@ function GridCard({ item }: { item: LibraryItem }) {
         )}
         <span className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-[11px] font-medium shadow-sm backdrop-blur">
           <meta.icon className="size-3" /> {meta.label}
+          {item.source === "WRITTEN" && <span className="text-muted-foreground">· Notebook</span>}
         </span>
-        <OpenOriginal url={item.url} className="absolute top-2 right-2 bg-background/90 text-foreground shadow-sm backdrop-blur hover:bg-background" />
+        {item.url && <OpenOriginal url={item.url} className="absolute top-2 right-2 bg-background/90 text-foreground shadow-sm backdrop-blur hover:bg-background" />}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-3.5">
         {/* Stretched link: the whole card opens the item; the ↗ button stays clickable above it. */}
         <Link
-          href={`/dashboard/content/${item.id}`}
+          href={itemHref(item)}
           className="line-clamp-2 text-sm leading-snug font-medium outline-none after:absolute after:inset-0 after:content-[''] group-hover:text-primary"
         >
           {item.title}
@@ -101,13 +107,13 @@ function ListRows({ items }: { items: LibraryItem[] }) {
                 <span className="min-w-0">
                   {/* Stretched link: the whole row opens the item. */}
                   <Link
-                    href={`/dashboard/content/${item.id}`}
+                    href={itemHref(item)}
                     className="block truncate text-sm font-medium outline-none after:absolute after:inset-0 after:content-[''] group-hover:text-primary"
                   >
                     {item.title}
                   </Link>
                   <span className="block truncate text-xs text-muted-foreground md:hidden">
-                    {meta.label} · {displayHost(item.url)} · {formatDate(item.updatedAt)}
+                    {meta.label} · {item.url ? displayHost(item.url) : "Notebook"} · {formatDate(item.updatedAt)}
                   </span>
                 </span>
               </span>
@@ -117,9 +123,9 @@ function ListRows({ items }: { items: LibraryItem[] }) {
               <span className="hidden md:block">
                 <StatusBadge status={item.status} />
               </span>
-              <span className="hidden truncate text-[13px] text-muted-foreground md:block">{item.siteName ?? displayHost(item.url)}</span>
+              <span className="hidden truncate text-[13px] text-muted-foreground md:block">{item.url ? (item.siteName ?? displayHost(item.url)) : "Notebook"}</span>
               <span className="hidden text-right text-[13px] whitespace-nowrap text-muted-foreground md:block">{formatDate(item.updatedAt)}</span>
-              <OpenOriginal url={item.url} className="justify-self-end" />
+              {item.url ? <OpenOriginal url={item.url} className="justify-self-end" /> : <span className="size-7" aria-hidden />}
             </li>
           );
         })}
@@ -133,7 +139,7 @@ function syncUrl(type?: ContentType) {
   const url = new URL(window.location.href);
   if (type) url.searchParams.set("type", type);
   else url.searchParams.delete("type");
-  window.history.replaceState(window.history.state, "", url);
+  window.history.replaceState(null, "", url);
 }
 
 export interface TypeStats {

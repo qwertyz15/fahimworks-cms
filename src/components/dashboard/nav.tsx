@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { FileText, LayoutDashboard, Menu, PlusCircle, Settings, X } from "lucide-react";
+import { FileText, LayoutDashboard, Menu, NotebookPen, PlusCircle, Settings, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/dashboard/content", label: "Content", icon: FileText },
   { href: "/dashboard/add", label: "Add content", icon: PlusCircle },
+  { href: "/dashboard/notebook", label: "Notebook", icon: NotebookPen },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 

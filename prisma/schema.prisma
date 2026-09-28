@@ -18,6 +18,12 @@ enum Role {
   EDITOR
 }
 
+/// IMPORTED = page written elsewhere (added by URL). WRITTEN = written in the Notebook editor.
+enum ContentSource {
+  IMPORTED
+  WRITTEN
+}
+
 enum ContentType {
   BLOG
   TUTORIAL
@@ -87,9 +93,13 @@ model Content {
   /// Stable public identifier used by the portfolio.
   slug          String      @unique
   title         String
-  url           String
-  /// Canonical form used for duplicate detection (lib/url.ts).
-  normalizedUrl String      @unique @map("normalized_url")
+  source        ContentSource @default(IMPORTED)
+  /// Original page for IMPORTED items; null for WRITTEN (Notebook) entries.
+  url           String?
+  /// Canonical form used for duplicate detection (lib/url.ts). Null for WRITTEN entries.
+  normalizedUrl String?     @unique @map("normalized_url")
+  /// Optional subtitle shown under the title (Notebook entries).
+  subtitle      String?
   type          ContentType
   description   String?
   thumbnail     String?
@@ -121,6 +131,8 @@ model Content {
   contentText      String?          @map("content_text")
   /// Sanitised HTML (sanitize-html allowlist). Never render unsanitised.
   contentHtml      String?          @map("content_html")
+  /// Notebook editor document (Tiptap JSON). contentHtml is its server-sanitised rendering.
+  body             Json?
   wordCount        Int?             @map("word_count")
   readingMinutes   Int?             @map("reading_minutes")
   images           Json?            @default("[]")
@@ -139,6 +151,7 @@ model Content {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([status])
+  @@index([source])
   @@index([type, status])
   @@index([publishedAt])
   @@index([contentHash])

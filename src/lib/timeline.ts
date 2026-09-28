@@ -14,6 +14,11 @@ export function isTimelineHost(host: string | null | undefined): boolean {
   return host.toLowerCase().split(":")[0] === configured;
 }
 
+/** Public article address of a Notebook (WRITTEN) entry. */
+export function writtenPostUrl(slug: string): string {
+  return `${timelineUrl()}/p/${slug}`;
+}
+
 /** Public address to link to / share. */
 export function timelineUrl(): string {
   const host = timelineHost();
