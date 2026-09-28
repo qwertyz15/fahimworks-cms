@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock, PlusCircle, ShieldCheck, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Clock, FilePen, PlusCircle, XCircle } from "lucide-react";
 import { VIEW_COOKIE, parseType } from "@/components/dashboard/content-types";
 import { Library } from "@/components/dashboard/library";
 import { TypeBadge } from "@/components/content/badges";
@@ -42,7 +42,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
   const statusStrip = [
     { label: "Published", value: stats.published, icon: CheckCircle2, href: "/dashboard/content?status=PUBLISHED", tone: "text-success" },
     { label: "Waiting for approval", value: stats.pendingApprovals, icon: Clock, href: "/dashboard/content?status=AWAITING_APPROVAL", tone: "text-violet-500" },
-    { label: "Awaiting verification", value: stats.pendingVerification, icon: ShieldCheck, href: "/dashboard/content?status=VERIFICATION_PENDING", tone: "text-warning" },
+    { label: "Drafts", value: stats.drafts, icon: FilePen, href: "/dashboard/content?status=DRAFT", tone: "text-warning" },
     { label: "Rejected", value: stats.rejected, icon: XCircle, href: "/dashboard/content?status=REJECTED", tone: "text-destructive" },
   ];
 
@@ -50,7 +50,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
     <div className="space-y-8">
       <PageHeader
         title="Overview"
-        description={`${stats.total} item${stats.total === 1 ? "" : "s"} in your portfolio library · ${stats.verified} verified URL${stats.verified === 1 ? "" : "s"}`}
+        description={`${stats.total} item${stats.total === 1 ? "" : "s"} in your portfolio library · ${stats.published} published`}
         actions={
           <Link href="/dashboard/add" className={buttonVariants()}>
             <PlusCircle /> Add content
@@ -72,7 +72,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
         <Card>
           <CardHeader
             title="Needs your review"
-            description="Verified and extracted — review, then publish."
+            description="Extracted and ready — review, then publish."
             action={
               <Link href="/dashboard/content?status=AWAITING_APPROVAL" className={buttonVariants({ variant: "ghost", size: "sm" })}>
                 View all <ArrowRight />

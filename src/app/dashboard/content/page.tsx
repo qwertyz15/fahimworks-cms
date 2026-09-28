@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ChevronLeft, ChevronRight, ExternalLink, FileText, PlusCircle } from "lucide-react";
-import { ApprovalBadge, TypeBadge, VerificationBadge } from "@/components/content/badges";
+import { StatusBadge, TypeBadge } from "@/components/content/badges";
 import { ContentFilters } from "@/components/content/content-filters";
 import { RowActions } from "@/components/content/row-actions";
 import { Thumb } from "@/components/content/thumb";
@@ -70,8 +70,7 @@ export default async function ContentPage({ searchParams }: PageProps<"/dashboar
                   <p className="truncate text-xs text-muted-foreground">{displayHost(item.url)} · {formatDate(item.publishedAt ?? item.createdAt)}</p>
                   <div className="flex flex-wrap gap-1.5">
                     <TypeBadge type={item.type} />
-                    <VerificationBadge status={item.verificationStatus} />
-                    <ApprovalBadge status={item.approvalStatus} />
+                    <StatusBadge status={item.status} />
                   </div>
                 </Link>
                 <RowActions id={item.id} title={item.title} status={item.status} />
@@ -80,14 +79,13 @@ export default async function ContentPage({ searchParams }: PageProps<"/dashboar
           </ul>
           {/* `relative` keeps absolutely-positioned descendants (sr-only labels) inside the scroll clip */}
           <div className="relative hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[860px] text-left text-sm">
+            <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="border-b bg-surface-2/60 text-xs text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-4 py-2.5 font-medium">Title</th>
                   <th scope="col" className="px-3 py-2.5 font-medium">Type</th>
                   <th scope="col" className="px-3 py-2.5 font-medium">URL</th>
-                  <th scope="col" className="px-3 py-2.5 font-medium">Verification</th>
-                  <th scope="col" className="px-3 py-2.5 font-medium">Approval</th>
+                  <th scope="col" className="px-3 py-2.5 font-medium">Status</th>
                   <th scope="col" className="px-3 py-2.5 font-medium">Date</th>
                   <th scope="col" className="px-3 py-2.5 text-right font-medium"><span className="sr-only">Actions</span></th>
                 </tr>
@@ -108,8 +106,7 @@ export default async function ContentPage({ searchParams }: PageProps<"/dashboar
                         <ExternalLink className="size-3 shrink-0" />
                       </a>
                     </td>
-                    <td className="px-3 py-2.5"><VerificationBadge status={item.verificationStatus} /></td>
-                    <td className="px-3 py-2.5"><ApprovalBadge status={item.approvalStatus} /></td>
+                    <td className="px-3 py-2.5"><StatusBadge status={item.status} /></td>
                     <td className="px-3 py-2.5 text-[13px] whitespace-nowrap text-muted-foreground">{formatDate(item.publishedAt ?? item.createdAt)}</td>
                     <td className="px-3 py-2.5 text-right">
                       <div className="flex justify-end"><RowActions id={item.id} title={item.title} status={item.status} /></div>

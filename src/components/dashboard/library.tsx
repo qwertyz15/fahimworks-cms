@@ -248,7 +248,7 @@ export function Library({
               description={
                 activeMeta
                   ? `Add a ${activeMeta.label.toLowerCase()} URL and choose "${activeMeta.label}" as its type.`
-                  : "Add the URL of something you wrote. You'll verify you own it, then publish it to your portfolio."
+                  : "Paste the URL of something you wrote, check the preview, and publish it to your portfolio."
               }
               action={
                 <Link href="/dashboard/add" className={buttonVariants({ size: "sm" })}>

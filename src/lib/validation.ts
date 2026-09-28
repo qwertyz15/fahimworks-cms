@@ -2,7 +2,6 @@ import { z } from "zod";
 import { parseSubmittedUrl } from "./url";
 
 export const CONTENT_TYPES = ["BLOG", "TUTORIAL", "ARTICLE", "PROJECT"] as const;
-export const VERIFICATION_METHODS = ["META_TAG", "FILE"] as const;
 
 const trimmed = (max: number) => z.string().trim().max(max);
 
@@ -73,8 +72,9 @@ export const tagsSchema = z
 export const createContentSchema = z.object({
   url: urlSchema,
   type: z.enum(CONTENT_TYPES),
-  method: z.enum(VERIFICATION_METHODS).default("META_TAG"),
   tags: tagsSchema,
+  /** "publish" = extract and publish immediately; "review" = stop at Waiting for approval. */
+  intent: z.enum(["publish", "review"]).default("publish"),
   /** Proceed even though duplicate warnings were shown. */
   acknowledgeDuplicates: z.coerce.boolean().optional().default(false),
 });
@@ -112,7 +112,6 @@ export const settingsSchema = z.object({
   siteName: trimmed(100).min(1, "Site name is required."),
   portfolioUrl: optionalUrl,
   minWordCount: z.coerce.number().int().min(20).max(5000),
-  tokenTtlHours: z.coerce.number().int().min(1).max(24 * 30),
   allowRegistration: z.coerce.boolean(),
   publicApiEnabled: z.coerce.boolean(),
   allowedOrigins: z

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { CheckCircle2, Eye, MoreHorizontal, Pencil, ShieldCheck, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, Eye, MoreHorizontal, Pencil, Trash2, XCircle } from "lucide-react";
 import type { ContentStatus } from "@/generated/prisma/enums";
 import { approveAction, deleteContentAction } from "@/server/actions/content";
 import { Dropdown, MenuItem, MenuSeparator } from "@/components/ui/dropdown";
@@ -13,7 +13,6 @@ export function RowActions({ id, title, status }: { id: string; title: string; s
   const router = useRouter();
   const { run, pending } = useRunAction();
   const [dialog, setDialog] = useState<"reject" | "delete" | null>(null);
-  const canVerify = status === "DRAFT" || status === "VERIFICATION_PENDING";
   const canDecide = status === "AWAITING_APPROVAL";
 
   return (
@@ -23,9 +22,6 @@ export function RowActions({ id, title, status }: { id: string; title: string; s
           <>
             <MenuItem onSelect={() => { close(); router.push(`/dashboard/content/${id}`); }}>
               <Eye /> Preview
-            </MenuItem>
-            <MenuItem disabled={!canVerify} onSelect={() => { close(); router.push(`/dashboard/content/${id}#verification`); }}>
-              <ShieldCheck /> Verify
             </MenuItem>
             <MenuItem disabled={!canDecide || pending} onSelect={() => { close(); run(() => approveAction(id)); }}>
               <CheckCircle2 /> Approve

@@ -32,7 +32,6 @@ export default async function EditContentPage({ params }: PageProps<"/dashboard/
           publishDate: content.publishDate ? content.publishDate.toISOString().slice(0, 10) : null,
           tags: content.tags.map((t) => t.name),
           featured: content.featured,
-          verified: content.verificationStatus === "VERIFIED",
         }}
       />
     </div>

@@ -12,7 +12,9 @@ export function useFormAction<T>(action: (prev: ActionResult<T>, form: FormData)
   const [pending, startTransition] = useTransition();
   const onSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const data = new FormData(e.currentTarget);
+    // Include the clicked submit button (e.g. name="intent" value="publish").
+    const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    const data = new FormData(e.currentTarget, submitter);
     startTransition(() => dispatch(data));
   };
   return { state, onSubmit, pending, errors: !state.ok ? state.fieldErrors : undefined };

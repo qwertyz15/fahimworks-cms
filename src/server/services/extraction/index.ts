@@ -45,9 +45,9 @@ export function meaningfulFor(doc: ExtractedDocument, type: ContentType, minWord
 }
 
 /**
- * Extract content for a verified item. On success moves VERIFIED →
- * AWAITING_APPROVAL (or refreshes data in place for items already past that
- * stage). On failure the error is recorded and the stage is unchanged.
+ * Fetch and extract an item's page. On success a draft moves to
+ * AWAITING_APPROVAL (items already in review or published are refreshed in
+ * place). On failure the error is recorded and the stage is unchanged.
  */
 export async function runExtraction(contentId: string, actorId: string): Promise<{ ok: boolean; message: string }> {
   const [content, settings] = await Promise.all([
@@ -55,8 +55,8 @@ export async function runExtraction(contentId: string, actorId: string): Promise
     getSettings(),
   ]);
   if (!content) throw new WorkflowError("Content not found.");
-  if (!["VERIFIED", "AWAITING_APPROVAL", "PUBLISHED"].includes(content.status)) {
-    throw new WorkflowError("Content can only be extracted after ownership is verified.");
+  if (content.status === "REJECTED") {
+    throw new WorkflowError("Reopen this item before extracting it again.");
   }
 
   const fail = async (message: string) => {
@@ -121,7 +121,7 @@ export async function runExtraction(contentId: string, actorId: string): Promise
   const mergedTags = [...existingTags, ...doc.tags.filter((t) => !existingTags.some((e) => e.toLowerCase() === t.toLowerCase()))].slice(0, 20);
 
   await db.$transaction(async (tx) => {
-    const to = content.status === "VERIFIED" ? "AWAITING_APPROVAL" : content.status;
+    const to = content.status === "AWAITING_APPROVAL" || content.status === "PUBLISHED" ? content.status : "AWAITING_APPROVAL";
     await transition(contentId, content.status, to, { data }, tx);
     await tx.content.update({ where: { id: contentId }, data: { tags: { set: [], connectOrCreate: tagConnect(mergedTags) } } });
   });

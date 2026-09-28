@@ -7,11 +7,10 @@ import { requireAdmin } from "@/server/auth/guards";
 
 export async function getDashboardStats() {
   await requireAdmin();
-  const [byType, byTypeStatus, byStatus, verified, recent, activity, pending] = await Promise.all([
+  const [byType, byTypeStatus, byStatus, recent, activity, pending] = await Promise.all([
     db.content.groupBy({ by: ["type"], _count: { _all: true } }),
     db.content.groupBy({ by: ["type", "status"], _count: { _all: true } }),
     db.content.groupBy({ by: ["status"], _count: { _all: true } }),
-    db.content.count({ where: { verificationStatus: "VERIFIED" } }),
     db.content.findMany({
       orderBy: { updatedAt: "desc" },
       take: 6,
@@ -51,9 +50,9 @@ export async function getDashboardStats() {
     tutorials: typeCount("TUTORIAL"),
     articles: typeCount("ARTICLE"),
     projects: typeCount("PROJECT"),
-    verified,
     pendingApprovals: statusCount("AWAITING_APPROVAL"),
-    pendingVerification: statusCount("VERIFICATION_PENDING") + statusCount("DRAFT"),
+    // Legacy verification stages count as drafts.
+    drafts: statusCount("DRAFT") + statusCount("VERIFICATION_PENDING") + statusCount("VERIFIED"),
     published: statusCount("PUBLISHED"),
     rejected: statusCount("REJECTED"),
     recent,
@@ -143,7 +142,6 @@ export async function listContent(params: ContentListParams) {
         url: true,
         type: true,
         status: true,
-        verificationStatus: true,
         approvalStatus: true,
         createdAt: true,
         publishedAt: true,
@@ -162,7 +160,6 @@ export async function getContentDetail(id: string) {
     include: {
       tags: { orderBy: { name: "asc" } },
       authorRef: { select: { name: true, email: true } },
-      verificationTokens: { orderBy: { createdAt: "desc" }, take: 5 },
     },
   });
 }

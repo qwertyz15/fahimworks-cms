@@ -3,14 +3,13 @@ import { db } from "@/lib/db";
 import { SafeFetchError } from "@/lib/http/safe-fetch";
 import { normalizeText, sha256, simhash } from "@/lib/similarity";
 import { normalizeUrl, parseSubmittedUrl } from "@/lib/url";
-import type { ContentType, VerificationMethod } from "@/generated/prisma/enums";
+import type { ContentType } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 import { audit } from "./audit";
 import { findSimilar, findUrlDuplicate, type DuplicateWarning } from "./duplicates";
 import { fetchAndExtract, meaningfulFor } from "./extraction";
 import { getSettings } from "./settings";
 import { tagConnect, uniqueSlug } from "./content-helpers";
-import { issueVerificationToken } from "./verification";
 import { transition, WorkflowError } from "./workflow";
 
 export class ContentError extends Error {
@@ -92,7 +91,6 @@ export async function previewUrl(rawUrl: string, type: ContentType): Promise<Url
 export interface CreateContentInput {
   url: string;
   type: ContentType;
-  method: VerificationMethod;
   tags: string[];
   titleHint?: string | null;
 }
@@ -123,7 +121,6 @@ export async function createContent(input: CreateContentInput, actorId: string) 
   }
 
   await audit({ actorId, action: "content.created", targetType: "content", targetId: content.id, metadata: { url: content.url } });
-  await issueVerificationToken(content.id, input.method, actorId);
   return content;
 }
 
@@ -170,8 +167,7 @@ export async function updateContent(input: UpdateContentInput, actorId: string) 
 
   await db.$transaction(async (tx) => {
     if (urlChanged) {
-      // Ownership was proven for the old URL only — start over.
-      await tx.verificationToken.updateMany({ where: { contentId: content.id, revokedAt: null }, data: { revokedAt: new Date() } });
+      // Extracted data belongs to the old URL — back to draft until re-extracted.
       const resetData = {
         url: parsed.url.href,
         normalizedUrl,
@@ -207,8 +203,8 @@ async function load(id: string) {
 export async function approveContent(id: string, actorId: string) {
   const content = await load(id);
   if (content.status !== "AWAITING_APPROVAL") throw new WorkflowError("Only items waiting for approval can be published.");
-  if (content.verificationStatus !== "VERIFIED" || content.extractionStatus !== "SUCCEEDED") {
-    throw new WorkflowError("Ownership must be verified and content extracted before publishing.");
+  if (content.extractionStatus !== "SUCCEEDED") {
+    throw new WorkflowError("Extract the content before publishing.");
   }
   await transition(id, "AWAITING_APPROVAL", "PUBLISHED");
   await audit({ actorId, action: "content.approved", targetType: "content", targetId: id });
@@ -217,7 +213,7 @@ export async function approveContent(id: string, actorId: string) {
 export async function rejectContent(id: string, reason: string | null, actorId: string) {
   const content = await load(id);
   if (content.status !== "AWAITING_APPROVAL" && content.status !== "VERIFIED") {
-    throw new WorkflowError("Only verified items awaiting a decision can be rejected. Unpublish published items first.");
+    throw new WorkflowError("Only items waiting for approval can be rejected. Unpublish published items first.");
   }
   await transition(id, content.status, "REJECTED", { rejectionReason: reason });
   await audit({ actorId, action: "content.rejected", targetType: "content", targetId: id, metadata: { reason } });
@@ -230,12 +226,11 @@ export async function unpublishContent(id: string, actorId: string) {
   await audit({ actorId, action: "content.unpublished", targetType: "content", targetId: id });
 }
 
-/** Rejected items return to review when still valid, to VERIFIED when extraction is missing, otherwise to draft. */
+/** Rejected items return to review when their extraction is valid, otherwise to draft. */
 export async function reopenContent(id: string, actorId: string) {
   const content = await load(id);
   if (content.status !== "REJECTED") throw new WorkflowError("Only rejected items can be reopened.");
-  const verified = content.verificationStatus === "VERIFIED";
-  const to = verified && content.extractionStatus === "SUCCEEDED" ? "AWAITING_APPROVAL" : verified ? "VERIFIED" : "DRAFT";
+  const to = content.extractionStatus === "SUCCEEDED" ? "AWAITING_APPROVAL" : "DRAFT";
   await transition(id, "REJECTED", to);
   await audit({ actorId, action: "content.reopened", targetType: "content", targetId: id });
 }

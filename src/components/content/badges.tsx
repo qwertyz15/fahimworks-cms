@@ -1,20 +1,14 @@
 import { Badge, type BadgeTone } from "@/components/ui/badge";
-import type { ApprovalStatus, ContentStatus, ContentType, VerificationStatus } from "@/generated/prisma/enums";
+import type { ApprovalStatus, ContentStatus, ContentType } from "@/generated/prisma/enums";
 
 const STATUS: Record<ContentStatus, { label: string; tone: BadgeTone }> = {
   DRAFT: { label: "Draft", tone: "neutral" },
-  VERIFICATION_PENDING: { label: "Verification pending", tone: "amber" },
-  VERIFIED: { label: "Verified", tone: "blue" },
+  // Legacy stages from the removed ownership-verification flow.
+  VERIFICATION_PENDING: { label: "Draft", tone: "neutral" },
+  VERIFIED: { label: "Draft", tone: "neutral" },
   AWAITING_APPROVAL: { label: "Awaiting approval", tone: "purple" },
   PUBLISHED: { label: "Published", tone: "green" },
   REJECTED: { label: "Rejected", tone: "red" },
-};
-
-const VERIFICATION: Record<VerificationStatus, { label: string; tone: BadgeTone }> = {
-  UNVERIFIED: { label: "Unverified", tone: "neutral" },
-  PENDING: { label: "Pending", tone: "amber" },
-  VERIFIED: { label: "Verified", tone: "green" },
-  FAILED: { label: "Failed", tone: "red" },
 };
 
 const APPROVAL: Record<ApprovalStatus, { label: string; tone: BadgeTone }> = {
@@ -32,15 +26,12 @@ const TYPE: Record<ContentType, { label: string; tone: BadgeTone }> = {
 };
 
 export const TYPE_LABELS = Object.fromEntries(Object.entries(TYPE).map(([k, v]) => [k, v.label])) as Record<ContentType, string>;
-export const STATUS_OPTIONS = Object.entries(STATUS).map(([value, v]) => ({ value, label: v.label }));
+export const STATUS_OPTIONS = Object.entries(STATUS)
+  .filter(([value]) => value !== "VERIFICATION_PENDING" && value !== "VERIFIED")
+  .map(([value, v]) => ({ value, label: v.label }));
 
 export function StatusBadge({ status }: { status: ContentStatus }) {
   const s = STATUS[status];
-  return <Badge tone={s.tone} dot>{s.label}</Badge>;
-}
-
-export function VerificationBadge({ status }: { status: VerificationStatus }) {
-  const s = VERIFICATION[status];
   return <Badge tone={s.tone} dot>{s.label}</Badge>;
 }
 

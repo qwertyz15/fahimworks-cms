@@ -71,7 +71,6 @@ export const RATE_LIMITS = {
   login: { limit: 5, windowMs: 15 * 60_000 },
   loginGlobalEmail: { limit: 10, windowMs: 60 * 60_000 },
   register: { limit: 5, windowMs: 60 * 60_000 },
-  verify: { limit: 20, windowMs: 10 * 60_000 },
   fetch: { limit: 30, windowMs: 10 * 60_000 },
   mutation: { limit: 120, windowMs: 60_000 },
   publicApi: { limit: 120, windowMs: 60_000 },

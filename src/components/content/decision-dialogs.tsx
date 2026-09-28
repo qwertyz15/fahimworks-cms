@@ -41,7 +41,7 @@ export function DeleteDialog({ title, open, onClose, onConfirm, pending }: { tit
       open={open}
       onClose={onClose}
       title="Delete content?"
-      description={<>“{title}” and its verification history will be permanently deleted. If it is published, it disappears from your portfolio.</>}
+      description={<>“{title}” and its history will be permanently deleted. If it is published, it disappears from your portfolio.</>}
       footer={
         <>
           <Button variant="outline" size="sm" onClick={onClose}>

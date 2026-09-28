@@ -1,8 +1,8 @@
 # Architecture
 
 Private, single-owner CMS that feeds a separate portfolio website. The owner
-submits URLs of content they wrote elsewhere, proves ownership of each URL,
-lets the system extract the content, reviews a preview, and publishes it.
+submits URLs of content they wrote elsewhere, sees an analysed preview, and
+publishes them; the system extracts the content on publish.
 The portfolio consumes published items through a read-only public API / RSS.
 
 ## 1. High-level design
@@ -18,7 +18,6 @@ The portfolio consumes published items through a read-only public API / RSS.
                 │   │                                   ▼                                                │
                 │   │                         src/server/services/*   (domain logic, no HTTP concerns)   │
                 │   │                           ├── workflow.ts      state machine (only status writer)  │
-                │   │                           ├── verification.ts  meta-tag / file checks              │
                 │   │                           ├── extraction.ts    metadata + Readability              │
                 │   │                           └── duplicates.ts    URL / title / SimHash similarity    │
                 │   │                                   │                                                │
@@ -49,34 +48,31 @@ and a health check.
 ## 2. Content workflow (state machine)
 
 ```
- DRAFT ──issue token──▶ VERIFICATION_PENDING ──check ok──▶ VERIFIED ──extract ok──▶ AWAITING_APPROVAL ──approve──▶ PUBLISHED
-   ▲                        │  check failed (stays,                 │ extract failed (stays,     │ reject            │ unpublish
-   │                        │  error recorded)                      │ retry available)           ▼                   ▼
-   └──────────── reset ─────┴───────────────────────────────────────┴──────────────────── REJECTED        AWAITING_APPROVAL
+ DRAFT ──extract ok──▶ AWAITING_APPROVAL ──approve──▶ PUBLISHED
+   ▲   extract failed      │    ▲ reopen                 │ unpublish
+   │   (stays, retry)      ▼    │                        ▼
+   └──── URL edited ──── REJECTED ──┘          AWAITING_APPROVAL
 ```
 
-`status` is the single source of truth. `verificationStatus` and
-`approvalStatus` are denormalised columns kept in sync by
-`services/workflow.ts` — the *only* code allowed to change any of the three —
-so the content table can filter on them cheaply. Illegal transitions throw.
+"Publish" on the Add page runs create → extract → approve in one action;
+"Save for review" stops at `AWAITING_APPROVAL`.
 
-Editing the URL of a verified item resets it to `DRAFT` (ownership must be
-re-proven for the new URL).
+`status` is the single source of truth. `approvalStatus` is a denormalised
+column kept in sync by `services/workflow.ts` — the *only* code allowed to
+change either — so the content table can filter on it cheaply. Illegal
+transitions throw.
 
-## 3. Ownership verification
+Editing the URL of an item resets it to `DRAFT` until the new page is
+extracted.
 
-A token is 32 bytes from `crypto.randomBytes`, base64url encoded, bound to
-one content item, one method and an expiry (default 72 h, configurable).
+## 3. Ownership
 
-| Method | Owner action | System check |
-|---|---|---|
-| `META_TAG` | Add `<meta name="portfolio-verification" content="TOKEN">` to the page | Fetch the **submitted URL**, parse `<head>` with cheerio, constant-time compare every `portfolio-verification` meta value |
-| `FILE` | Serve `portfolio-verification-TOKEN.txt` at the site root containing `TOKEN` | Fetch `https://<host>/portfolio-verification-TOKEN.txt` (no cross-host redirects), body trimmed must equal token, `text/*` content type, ≤ 4 KB |
-
-Checks record `attempts`, `lastCheckedAt`, `lastError`. Redirects are
-followed (max 5), but the final URL must stay on the same registrable host as
-the submitted URL, otherwise verification fails — this prevents "verify a
-page that redirects to a page I own".
+Only the signed-in admin can add content, and there is no per-URL
+ownership proof. An earlier meta-tag / root-file verification flow was
+removed. Its `VERIFICATION_PENDING` / `VERIFIED` statuses, the
+`verificationStatus` / `verifiedAt` columns and the `VerificationToken`
+table remain in the schema for existing rows only, and nothing writes them
+any more.
 
 ### SSRF protection (`lib/http/safe-fetch.ts`)
 Every outbound request: http/https only, no credentials in URL, standard
@@ -88,7 +84,7 @@ only via `ALLOW_PRIVATE_NETWORK_FETCH=true` for local development.
 
 ## 4. Extraction pipeline
 
-1. `safeFetch` the verified URL (HTML content types only).
+1. `safeFetch` the URL (HTML content types only; same-site redirects only).
 2. **Metadata** (cheerio): `<title>`, OpenGraph, Twitter cards, `article:*`,
    `<meta name=author|description|keywords>`, `<link rel=canonical>`,
    `<html lang>`, and JSON-LD (`Article`, `BlogPosting`, `TechArticle`,
@@ -129,7 +125,7 @@ For large corpora the in-app comparison can be swapped for `pg_trgm` /
 | Input | zod schemas at every boundary |
 | SQL injection | Prisma parameterised queries only; the single raw query uses tagged templates |
 | XSS | React escaping; extracted HTML sanitised with an allowlist on write (scripts, handlers, `javascript:` URLs stripped) and shown only in the admin preview; nonce-based CSP as a second layer; `img` with `referrerPolicy=no-referrer` |
-| Rate limiting | Token bucket per IP+action (login, register, verification checks, public API). In-memory by default; `RateLimitStore` interface for Redis in multi-instance deployments |
+| Rate limiting | Token bucket per IP+action (login, register, page fetches, public API). In-memory by default; `RateLimitStore` interface for Redis in multi-instance deployments |
 | Headers | CSP, HSTS (prod), X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy |
 | Auditing | `AuditLog` row for every privileged action |
 
@@ -140,9 +136,9 @@ For large corpora the in-app comparison can be swapped for `pg_trgm` /
   extracted content, fingerprints, `slug` for the portfolio, `authorId`
   (owning user — enables multi-author later), tags (m:n).
 - **Tag** — normalised unique `slug`.
-- **VerificationToken** — per content item & method, expiry, attempt log.
+- **VerificationToken** — legacy (removed verification flow); unused.
 - **SystemSettings** — singleton (`id = 1`): `allowRegistration`, site
-  settings, `minWordCount`, `tokenTtlHours`, `publicApiEnabled`,
+  settings, `minWordCount`, `publicApiEnabled`,
   `allowedOrigins`.
 - **AuditLog** — actor, action, target, metadata, IP.
 
@@ -188,7 +184,7 @@ For large corpora the in-app comparison can be swapped for `pg_trgm` /
 │       ├── auth/                 requireAdmin, password, session helpers
 │       ├── actions/              "use server" entry points
 │       ├── queries/              read models
-│       └── services/             workflow, verification, extraction, duplicates, summary, audit, settings
+│       └── services/             workflow, extraction, duplicates, summary, audit, settings
 ├── tests/                        vitest unit tests for lib + services
 ├── Dockerfile, docker-compose.yml, .env.example
 ```

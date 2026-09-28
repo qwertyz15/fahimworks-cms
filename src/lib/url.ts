@@ -1,5 +1,5 @@
 /**
- * URL helpers shared by validation, verification and duplicate detection.
+ * URL helpers shared by validation, fetching and duplicate detection.
  * Pure functions — safe to unit test and to import from client code.
  */
 

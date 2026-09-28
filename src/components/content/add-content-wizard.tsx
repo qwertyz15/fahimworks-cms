@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Globe, Link2, Search, XCircle } from "lucide-react";
+import { CheckCircle2, Globe, Link2, Search, Send, XCircle } from "lucide-react";
 import { createContentAction, previewUrlAction } from "@/server/actions/content";
 import type { UrlPreview } from "@/server/services/content";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -18,12 +18,13 @@ export function AddContentWizard() {
   const { state: preview, onSubmit: analyze, pending: analyzing } = useFormAction<UrlPreview>(previewUrlAction);
   const { state: created, onSubmit: create, pending: creating } = useFormAction(createContentAction);
   const [type, setType] = useState("BLOG");
+  const [intent, setIntent] = useState<"publish" | "review">("publish");
   const data = preview.ok ? preview.data : undefined;
 
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader title="1. Content URL" description="The page must be publicly reachable. Only pages you own can be added." />
+        <CardHeader title="1. Content URL" description="Paste the link to a post, tutorial, article or project page. It must be publicly reachable." />
         <form onSubmit={analyze}>
           <CardContent className="space-y-4">
             {!preview.ok && <FormAlert message={preview.error} />}
@@ -55,7 +56,7 @@ export function AddContentWizard() {
 
       {data && (
         <Card>
-          <CardHeader title="2. Review" description="We checked the page and your library for duplicates." />
+          <CardHeader title="2. Review & publish" description="We checked the page and your library for duplicates. Publishing imports the content and puts it on your portfolio." />
           <form onSubmit={create}>
             <input type="hidden" name="url" value={data.url} />
             <input type="hidden" name="type" value={type} />
@@ -102,8 +103,26 @@ export function AddContentWizard() {
               </Field>
             </CardContent>
             <CardFooter>
-              <SubmitButton pending={creating} disabled={!data.meaningful.ok} pendingText="Adding…">
-                Add &amp; get verification token
+              <SubmitButton
+                name="intent"
+                value="review"
+                variant="outline"
+                pending={creating && intent === "review"}
+                disabled={!data.meaningful.ok || creating}
+                onClick={() => setIntent("review")}
+                pendingText="Saving…"
+              >
+                Save for review
+              </SubmitButton>
+              <SubmitButton
+                name="intent"
+                value="publish"
+                pending={creating && intent === "publish"}
+                disabled={!data.meaningful.ok || creating}
+                onClick={() => setIntent("publish")}
+                pendingText="Publishing…"
+              >
+                <Send /> Publish
               </SubmitButton>
             </CardFooter>
           </form>

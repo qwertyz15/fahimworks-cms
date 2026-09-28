@@ -26,7 +26,8 @@ export function DecisionBar({
   const extract = useRunAction();
   const del = useRunAction();
   const [dialog, setDialog] = useState<"reject" | "delete" | null>(null);
-  const canExtract = status === "VERIFIED" || status === "AWAITING_APPROVAL" || status === "PUBLISHED";
+  const canExtract = status !== "REJECTED";
+  const needsExtraction = extractionStatus !== "SUCCEEDED";
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -56,7 +57,7 @@ export function DecisionBar({
         </Button>
       )}
       {canExtract && (
-        <Button variant={extractionStatus === "FAILED" || status === "VERIFIED" ? "primary" : "ghost"} loading={extract.pending} onClick={() => extract.run(() => reextractAction(id))}>
+        <Button variant={needsExtraction ? "primary" : "ghost"} loading={extract.pending} onClick={() => extract.run(() => reextractAction(id))}>
           <RefreshCw /> {extractionStatus === "SUCCEEDED" ? "Re-extract" : "Extract content"}
         </Button>
       )}

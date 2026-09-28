@@ -14,7 +14,6 @@ export interface SettingsValues {
   siteName: string;
   portfolioUrl: string | null;
   minWordCount: number;
-  tokenTtlHours: number;
   allowRegistration: boolean;
   publicApiEnabled: boolean;
   allowedOrigins: string[];
@@ -57,13 +56,10 @@ export function SettingsForm({ values }: { values: SettingsValues }) {
       </Card>
 
       <Card>
-        <CardHeader title="Content rules" description="How URLs are verified and what counts as meaningful content." />
+        <CardHeader title="Content rules" description="What counts as meaningful content when a URL is analysed." />
         <CardContent className="grid gap-5 sm:grid-cols-2">
           <Field id="minWordCount" label="Minimum word count" error={errors?.minWordCount} hint="Pages with less readable text are rejected. Projects use one third of this.">
             <Input id="minWordCount" name="minWordCount" type="number" min={20} max={5000} defaultValue={values.minWordCount} />
-          </Field>
-          <Field id="tokenTtlHours" label="Verification token lifetime (hours)" error={errors?.tokenTtlHours}>
-            <Input id="tokenTtlHours" name="tokenTtlHours" type="number" min={1} max={720} defaultValue={values.tokenTtlHours} />
           </Field>
         </CardContent>
       </Card>

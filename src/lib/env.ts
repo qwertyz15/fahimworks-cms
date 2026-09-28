@@ -15,7 +15,7 @@ const schema = z.object({
   SCREENSHOT_URL_TEMPLATE: z.string().optional().default(""),
   FETCH_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(10000),
   FETCH_MAX_BYTES: z.coerce.number().int().min(64 * 1024).max(50 * 1024 * 1024).default(5 * 1024 * 1024),
-  FETCH_USER_AGENT: z.string().default("PortfolioCMS-Verifier/1.0 (+ownership verification)"),
+  FETCH_USER_AGENT: z.string().default("PortfolioCMS/1.0 (+content import)"),
 });
 
 export type Env = z.infer<typeof schema>;

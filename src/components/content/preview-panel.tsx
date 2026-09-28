@@ -24,7 +24,7 @@ export function PreviewPanel({ content, screenshot }: { content: ContentDetail; 
       <Card className="overflow-hidden">
         <CardHeader
           title="Preview"
-          description={extracted ? `Extracted ${formatDateTime(content.extractedAt)}` : "Extraction runs automatically once ownership is verified."}
+          description={extracted ? `Extracted ${formatDateTime(content.extractedAt)}` : "Not extracted yet — click Extract content."}
           action={
             <a href={content.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
               Open original <ExternalLink className="size-3.5" />

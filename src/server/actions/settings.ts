@@ -16,7 +16,6 @@ export async function updateSettingsAction(_prev: ActionResult, form: FormData):
       siteName: formString(form, "siteName"),
       portfolioUrl: formString(form, "portfolioUrl"),
       minWordCount: formString(form, "minWordCount"),
-      tokenTtlHours: formString(form, "tokenTtlHours"),
       allowRegistration: formString(form, "allowRegistration") === "on",
       publicApiEnabled: formString(form, "publicApiEnabled") === "on",
       allowedOrigins: formString(form, "allowedOrigins"),

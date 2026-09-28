@@ -24,7 +24,6 @@ export interface EditableContent {
   publishDate: string | null;
   tags: string[];
   featured: boolean;
-  verified: boolean;
 }
 
 export function ContentEditForm({ content }: { content: EditableContent }) {
@@ -39,11 +38,9 @@ export function ContentEditForm({ content }: { content: EditableContent }) {
           <Field id="url" label="URL" error={errors?.url}>
             <Input id="url" name="url" type="url" defaultValue={content.url} required aria-invalid={Boolean(errors?.url)} />
           </Field>
-          {content.verified && (
-            <p className="-mt-3 flex items-center gap-1.5 text-xs text-warning">
-              <AlertTriangle className="size-3.5" /> Changing the URL resets the item to Draft — ownership must be verified again.
-            </p>
-          )}
+          <p className="-mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <AlertTriangle className="size-3.5" /> Changing the URL moves the item back to Draft until its content is extracted again.
+          </p>
           <div className="grid gap-5 sm:grid-cols-[1fr_11rem]">
             <Field id="title" label="Title" error={errors?.title}>
               <Input id="title" name="title" defaultValue={content.title} required maxLength={300} aria-invalid={Boolean(errors?.title)} />

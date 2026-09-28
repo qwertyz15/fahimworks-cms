@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { RATE_LIMITS } from "@/lib/rate-limit";
-import { CONTENT_TYPES, VERIFICATION_METHODS, createContentSchema, idSchema, updateContentSchema, urlSchema } from "@/lib/validation";
+import { CONTENT_TYPES, createContentSchema, idSchema, updateContentSchema, urlSchema } from "@/lib/validation";
 import {
   approveContent,
   createContent,
@@ -17,7 +17,6 @@ import {
   type UrlPreview,
 } from "@/server/services/content";
 import { runExtraction } from "@/server/services/extraction";
-import { issueVerificationToken, runVerification } from "@/server/services/verification";
 import { adminAction, formString, type ActionResult } from "./result";
 
 function refresh(id?: string) {
@@ -37,55 +36,41 @@ export async function previewUrlAction(_prev: ActionResult<UrlPreview>, form: Fo
   );
 }
 
+/**
+ * Add a URL that was analysed on the Add page: create it, extract its content
+ * and, with intent "publish" (the default), publish it straight away.
+ * Intent "review" stops at "Waiting for approval" instead.
+ */
 export async function createContentAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
-  let id: string | undefined;
-  const result = await adminAction<undefined>(async (user) => {
-    const input = createContentSchema.parse({
-      url: formString(form, "url"),
-      type: formString(form, "type"),
-      method: formString(form, "method") || undefined,
-      tags: formString(form, "tags"),
-      acknowledgeDuplicates: formString(form, "acknowledgeDuplicates") === "on",
-    });
-    if (formString(form, "hasWarnings") === "true" && !input.acknowledgeDuplicates) {
-      return { ok: false, error: "Confirm that you want to add this item despite the similar content warnings." };
-    }
-    const content = await createContent({ ...input, titleHint: formString(form, "title").slice(0, 300) }, user.id);
-    id = content.id;
-    return { ok: true };
-  });
-  if (!result.ok || !id) return result;
-  refresh();
-  redirect(`/dashboard/content/${id}?added=1`);
-}
-
-export async function issueTokenAction(contentId: string, method: string): Promise<ActionResult> {
-  return adminAction(async (user) => {
-    const id = idSchema.parse(contentId);
-    await issueVerificationToken(id, z.enum(VERIFICATION_METHODS).parse(method), user.id);
-    refresh(id);
-    return { ok: true, message: "New verification token generated." };
-  });
-}
-
-export async function verifyOwnershipAction(contentId: string): Promise<ActionResult> {
-  return adminAction(
+  let target: string | undefined;
+  const result = await adminAction<undefined>(
     async (user) => {
-      const id = idSchema.parse(contentId);
-      const outcome = await runVerification(id, user.id);
-      if (!outcome.ok) {
-        refresh(id);
-        return { ok: false, error: outcome.message };
+      const input = createContentSchema.parse({
+        url: formString(form, "url"),
+        type: formString(form, "type"),
+        tags: formString(form, "tags"),
+        intent: formString(form, "intent") || undefined,
+        acknowledgeDuplicates: formString(form, "acknowledgeDuplicates") === "on",
+      });
+      if (formString(form, "hasWarnings") === "true" && !input.acknowledgeDuplicates) {
+        return { ok: false, error: "Confirm that you want to add this item despite the similar content warnings." };
       }
-      // Ownership proven — extract immediately so the item lands in review.
-      const extraction = await runExtraction(id, user.id);
-      refresh(id);
-      return extraction.ok
-        ? { ok: true, message: `Ownership verified. ${extraction.message}` }
-        : { ok: false, error: `Ownership verified, but extraction failed: ${extraction.message}` };
+      const content = await createContent({ ...input, titleHint: formString(form, "title").slice(0, 300) }, user.id);
+
+      const extraction = await runExtraction(content.id, user.id);
+      let outcome: "published" | "review" | "failed" = extraction.ok ? "review" : "failed";
+      if (extraction.ok && input.intent === "publish") {
+        await approveContent(content.id, user.id);
+        outcome = "published";
+      }
+      target = `/dashboard/content/${content.id}?added=${outcome}`;
+      return { ok: true };
     },
-    { rateLimit: { key: "verify", rule: RATE_LIMITS.verify } },
+    { rateLimit: { key: "fetch", rule: RATE_LIMITS.fetch } },
   );
+  if (!result.ok || !target) return result;
+  refresh();
+  redirect(target);
 }
 
 export async function reextractAction(contentId: string): Promise<ActionResult> {

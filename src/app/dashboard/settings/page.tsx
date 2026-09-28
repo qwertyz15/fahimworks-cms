@@ -36,7 +36,6 @@ export default async function SettingsPage() {
           siteName: settings.siteName,
           portfolioUrl: settings.portfolioUrl,
           minWordCount: settings.minWordCount,
-          tokenTtlHours: settings.tokenTtlHours,
           allowRegistration: settings.allowRegistration,
           publicApiEnabled: settings.publicApiEnabled,
           allowedOrigins: settings.allowedOrigins,

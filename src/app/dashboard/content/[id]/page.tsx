@@ -2,11 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, CheckCircle2, ExternalLink, Info } from "lucide-react";
-import { ApprovalBadge, StatusBadge, TypeBadge, VerificationBadge } from "@/components/content/badges";
+import { ApprovalBadge, StatusBadge, TypeBadge } from "@/components/content/badges";
 import { DecisionBar } from "@/components/content/decision-bar";
 import { DuplicateWarnings } from "@/components/content/duplicate-warnings";
 import { PreviewPanel } from "@/components/content/preview-panel";
-import { VerificationPanel, type VerificationPanelProps } from "@/components/content/verification-panel";
 import { WorkflowStepper } from "@/components/content/workflow-stepper";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { FormAlert } from "@/components/ui/field";
@@ -15,13 +14,13 @@ import { formatDate, formatDateTime } from "@/lib/utils";
 import { getContentDetail, getContentHistory } from "@/server/queries/content";
 import type { DuplicateWarning } from "@/server/services/duplicates-core";
 import { screenshotUrl } from "@/server/services/screenshot";
-import { metaTagSnippet, verificationFileName, verificationFileUrl } from "@/server/services/verification/match";
 
 export const metadata: Metadata = { title: "Content" };
 
 const HISTORY_LABELS: Record<string, string> = {
   "content.created": "Added",
   "content.updated": "Edited",
+  // Entries from the removed ownership-verification flow (older items only).
   "content.verification_issued": "Verification token issued",
   "content.verification_succeeded": "Ownership verified",
   "content.verification_failed": "Verification check failed",
@@ -39,25 +38,21 @@ export default async function ContentDetailPage({ params, searchParams }: PagePr
   const [content, history] = await Promise.all([getContentDetail(id), getContentHistory(id)]);
   if (!content) notFound();
 
-  const activeToken = content.verificationTokens.find((t) => !t.revokedAt && !t.verifiedAt) ?? null;
-  const needsVerification = content.status === "DRAFT" || content.status === "VERIFICATION_PENDING";
   const warnings = (Array.isArray(content.duplicateWarnings) ? content.duplicateWarnings : []) as unknown as DuplicateWarning[];
-  const now = new Date();
 
-  const tokenProps: VerificationPanelProps["token"] = activeToken && {
-    method: activeToken.method,
-    token: activeToken.token,
-    snippet: metaTagSnippet(activeToken.token),
-    fileName: verificationFileName(activeToken.token),
-    fileUrl: verificationFileUrl(content.url, activeToken.token),
-    expiresAt: activeToken.expiresAt.toISOString(),
-    expired: activeToken.expiresAt < now,
-    attempts: activeToken.attempts,
-    lastCheckedAt: activeToken.lastCheckedAt?.toISOString() ?? null,
-    lastError: activeToken.lastError,
+  const NOTICES: Record<string, { tone: "success" | "info" | "error"; text: string }> = {
+    published: { tone: "success", text: "Added and published to your portfolio." },
+    review: { tone: "success", text: "Added. It's waiting for your approval — publish it when you're ready." },
+    failed: { tone: "error", text: "Added, but the page could not be extracted. Fix the problem shown below, then click Extract content." },
   };
-
-  const notice = sp.added && needsVerification ? "Content added. Complete ownership verification below." : sp.saved ? "Changes saved." : sp.urlChanged ? "URL changed — ownership must be verified again for the new URL." : undefined;
+  const added = typeof sp.added === "string" ? NOTICES[sp.added] : undefined;
+  const notice =
+    added ??
+    (sp.saved
+      ? { tone: "success" as const, text: "Changes saved." }
+      : sp.urlChanged
+        ? { tone: "info" as const, text: "URL changed — click Extract content to import the new page, then publish it again." }
+        : undefined);
 
   return (
     <div className="space-y-6">
@@ -80,11 +75,11 @@ export default async function ContentDetailPage({ params, searchParams }: PagePr
         <DecisionBar id={content.id} title={content.title} status={content.status} extractionStatus={content.extractionStatus} hasDuplicates={warnings.length > 0} />
       </div>
 
-      {notice && <FormAlert tone={sp.urlChanged ? "info" : "success"} message={notice} />}
+      {notice && <FormAlert tone={notice.tone} message={notice.text} />}
 
       <Card>
         <CardContent className="py-5">
-          <WorkflowStepper status={content.status} verified={content.verificationStatus === "VERIFIED"} />
+          <WorkflowStepper status={content.status} extracted={content.extractionStatus === "SUCCEEDED"} />
           {content.status === "REJECTED" && content.rejectionReason && (
             <p className="mt-4 flex items-start gap-2 text-[13px] text-muted-foreground">
               <Info className="mt-0.5 size-3.5 shrink-0" /> Rejection reason: {content.rejectionReason}
@@ -102,7 +97,6 @@ export default async function ContentDetailPage({ params, searchParams }: PagePr
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          {needsVerification && <VerificationPanel contentId={content.id} url={content.url} status={content.status as "DRAFT" | "VERIFICATION_PENDING"} token={tokenProps} />}
           <PreviewPanel content={content} screenshot={screenshotUrl(content.url)} />
         </div>
 
@@ -111,9 +105,7 @@ export default async function ContentDetailPage({ params, searchParams }: PagePr
             <CardHeader title="Status" />
             <CardContent className="py-2">
               <dl className="divide-y">
-                <MetaRow label="Verification"><VerificationBadge status={content.verificationStatus} /></MetaRow>
                 <MetaRow label="Approval"><ApprovalBadge status={content.approvalStatus} /></MetaRow>
-                <MetaRow label="Verified">{content.verifiedAt ? formatDate(content.verifiedAt) : null}</MetaRow>
                 <MetaRow label="Published">{content.publishedAt ? formatDate(content.publishedAt) : null}</MetaRow>
                 <MetaRow label="Created">{formatDate(content.createdAt)}</MetaRow>
                 <MetaRow label="Updated">{formatDate(content.updatedAt)}</MetaRow>

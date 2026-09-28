@@ -1,24 +1,28 @@
 import "server-only";
-import type { ApprovalStatus, ContentStatus, VerificationStatus } from "@/generated/prisma/enums";
+import type { ApprovalStatus, ContentStatus } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 
 /**
- * Content workflow state machine. This module is the ONLY writer of
- * `status`, `verificationStatus` and `approvalStatus`.
+ * Content workflow state machine. This module is the ONLY writer of `status`
+ * and `approvalStatus`.
  *
- *   DRAFT → VERIFICATION_PENDING → VERIFIED → AWAITING_APPROVAL → PUBLISHED
- *                                                    ↓↑               ↓
- *                                                 REJECTED    (unpublish → AWAITING_APPROVAL)
+ *   DRAFT ──extract──▶ AWAITING_APPROVAL ──approve──▶ PUBLISHED
+ *                        ▲          │                     │
+ *                        └─reopen─ REJECTED    unpublish ─┘ (→ AWAITING_APPROVAL)
+ *
+ * Adding content normally runs extract + approve in one step ("Publish").
+ * VERIFICATION_PENDING / VERIFIED are legacy stages from the removed
+ * ownership-verification flow; rows still in them can only move forward.
  */
 
 export const TRANSITIONS: Record<ContentStatus, readonly ContentStatus[]> = {
-  DRAFT: ["VERIFICATION_PENDING"],
-  VERIFICATION_PENDING: ["VERIFICATION_PENDING", "VERIFIED", "DRAFT"],
+  DRAFT: ["AWAITING_APPROVAL"],
+  VERIFICATION_PENDING: ["AWAITING_APPROVAL", "DRAFT"],
   VERIFIED: ["AWAITING_APPROVAL", "DRAFT", "REJECTED"],
   AWAITING_APPROVAL: ["PUBLISHED", "REJECTED", "DRAFT", "AWAITING_APPROVAL"],
   PUBLISHED: ["AWAITING_APPROVAL", "DRAFT", "PUBLISHED"],
-  REJECTED: ["AWAITING_APPROVAL", "VERIFIED", "DRAFT"],
+  REJECTED: ["AWAITING_APPROVAL", "DRAFT"],
 };
 
 export class WorkflowError extends Error {
@@ -32,33 +36,21 @@ export function canTransition(from: ContentStatus, to: ContentStatus) {
   return TRANSITIONS[from].includes(to);
 }
 
-type Derived = { verificationStatus?: VerificationStatus; approvalStatus: ApprovalStatus };
-
-function derived(to: ContentStatus, opts: { verificationFailed?: boolean }): Derived {
-  switch (to) {
-    case "DRAFT":
-      return { verificationStatus: "UNVERIFIED", approvalStatus: "NOT_SUBMITTED" };
-    case "VERIFICATION_PENDING":
-      return { verificationStatus: opts.verificationFailed ? "FAILED" : "PENDING", approvalStatus: "NOT_SUBMITTED" };
-    case "VERIFIED":
-      return { verificationStatus: "VERIFIED", approvalStatus: "NOT_SUBMITTED" };
-    case "AWAITING_APPROVAL":
-      return { verificationStatus: "VERIFIED", approvalStatus: "PENDING" };
-    case "PUBLISHED":
-      return { verificationStatus: "VERIFIED", approvalStatus: "APPROVED" };
-    case "REJECTED":
-      // Verification state is preserved: rejecting is an editorial decision.
-      return { approvalStatus: "REJECTED" };
-  }
-}
+const APPROVAL: Record<ContentStatus, ApprovalStatus> = {
+  DRAFT: "NOT_SUBMITTED",
+  VERIFICATION_PENDING: "NOT_SUBMITTED",
+  VERIFIED: "NOT_SUBMITTED",
+  AWAITING_APPROVAL: "PENDING",
+  PUBLISHED: "APPROVED",
+  REJECTED: "REJECTED",
+};
 
 type Tx = Prisma.TransactionClient | typeof db;
 
 export interface TransitionOptions {
-  verificationFailed?: boolean;
   rejectionReason?: string | null;
   /** Additional columns to write atomically with the transition. */
-  data?: Omit<Prisma.ContentUpdateManyMutationInput, "status" | "verificationStatus" | "approvalStatus">;
+  data?: Omit<Prisma.ContentUpdateManyMutationInput, "status" | "approvalStatus">;
 }
 
 type PublishHook = (contentId: string) => Promise<void> | void;
@@ -86,8 +78,7 @@ export async function transition(
   }
   const now = new Date();
   const timestamps: Prisma.ContentUpdateManyMutationInput = {};
-  if (to === "DRAFT") Object.assign(timestamps, { verifiedAt: null, approvedAt: null, publishedAt: null, rejectedAt: null, rejectionReason: null });
-  if (to === "VERIFIED" && from !== "REJECTED") timestamps.verifiedAt = now;
+  if (to === "DRAFT") Object.assign(timestamps, { approvedAt: null, publishedAt: null, rejectedAt: null, rejectionReason: null });
   if (to === "AWAITING_APPROVAL") Object.assign(timestamps, { rejectedAt: null, rejectionReason: null });
   if (to === "PUBLISHED" && from !== "PUBLISHED") Object.assign(timestamps, { approvedAt: now, publishedAt: now });
   if (to === "AWAITING_APPROVAL" && from === "PUBLISHED") Object.assign(timestamps, { publishedAt: null, approvedAt: null });
@@ -95,7 +86,7 @@ export async function transition(
 
   const result = await tx.content.updateMany({
     where: { id: contentId, status: from },
-    data: { ...opts.data, ...timestamps, status: to, ...derived(to, opts) },
+    data: { ...opts.data, ...timestamps, status: to, approvalStatus: APPROVAL[to] },
   });
   if (result.count !== 1) {
     throw new WorkflowError("This item was changed by another request. Refresh and try again.");
@@ -110,8 +101,8 @@ export async function transition(
 
 export const STATUS_LABELS: Record<ContentStatus, string> = {
   DRAFT: "Draft",
-  VERIFICATION_PENDING: "Verification pending",
-  VERIFIED: "Ownership verified",
+  VERIFICATION_PENDING: "Draft",
+  VERIFIED: "Draft",
   AWAITING_APPROVAL: "Waiting for approval",
   PUBLISHED: "Published",
   REJECTED: "Rejected",
