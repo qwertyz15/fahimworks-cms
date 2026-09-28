@@ -23,9 +23,13 @@ const TYPE: Record<ContentType, { label: string; tone: BadgeTone }> = {
   TUTORIAL: { label: "Tutorial", tone: "blue" },
   ARTICLE: { label: "Article", tone: "pink" },
   PROJECT: { label: "Project", tone: "amber" },
+  NOTEBOOK: { label: "Notebook", tone: "green" },
 };
 
+/** All types — for filters. */
 export const TYPE_LABELS = Object.fromEntries(Object.entries(TYPE).map(([k, v]) => [k, v.label])) as Record<ContentType, string>;
+/** Types an imported item can have (Notebook is only for posts written in the Notebook). */
+export const IMPORT_TYPE_LABELS = Object.fromEntries(Object.entries(TYPE_LABELS).filter(([k]) => k !== "NOTEBOOK")) as Record<Exclude<ContentType, "NOTEBOOK">, string>;
 export const STATUS_OPTIONS = Object.entries(STATUS)
   .filter(([value]) => value !== "VERIFICATION_PENDING" && value !== "VERIFIED")
   .map(([value, v]) => ({ value, label: v.label }));

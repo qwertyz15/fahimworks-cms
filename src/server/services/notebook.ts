@@ -21,7 +21,6 @@ export interface SaveEntryInput {
   id?: string;
   title: string;
   subtitle: string | null;
-  type: ContentType;
   tags: string[];
   slug: string | null;
   summary: string | null;
@@ -68,7 +67,8 @@ export async function saveEntry(input: SaveEntryInput, actorId: string): Promise
   const data = {
     title,
     subtitle: input.subtitle,
-    type: input.type,
+    // Notebook posts are always their own type.
+    type: "NOTEBOOK" as const,
     body: input.body,
     contentHtml,
     contentText: derived.contentText,

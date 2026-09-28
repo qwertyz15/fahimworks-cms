@@ -29,6 +29,8 @@ enum ContentType {
   TUTORIAL
   ARTICLE
   PROJECT
+  /// Written in the dashboard Notebook (source = WRITTEN). Never used for imported items.
+  NOTEBOOK
 }
 
 /// Workflow stage. Source of truth; see services/workflow.ts.

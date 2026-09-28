@@ -27,7 +27,6 @@ export default async function EditEntryPage({ params }: PageProps<"/dashboard/no
         id: entry.id,
         title: entry.title,
         subtitle: entry.subtitle,
-        type: entry.type,
         status: entry.status,
         slug: entry.slug,
         summary,

@@ -7,12 +7,11 @@ import { AlertCircle, ArrowLeft, ArrowUpRight, Check, EyeOff, ImagePlus, Loader2
 import { toast } from "sonner";
 import { deleteEntryAction, publishEntryAction, saveEntryAction, unpublishEntryAction } from "@/server/actions/notebook";
 import type { SavedEntry } from "@/server/services/notebook";
-import { TYPE_META, TYPE_ORDER } from "@/components/dashboard/content-types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
-import { Input, Select, Textarea } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { useRunAction } from "@/components/use-action-toast";
 import { cn } from "@/lib/utils";
@@ -29,7 +28,6 @@ export interface EditableEntry {
   id: string;
   title: string;
   subtitle: string | null;
-  type: string;
   status: string;
   slug: string;
   summary: string | null;
@@ -60,7 +58,6 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
   const [status, setStatus] = useState(entry?.status ?? "DRAFT");
   const [title, setTitle] = useState(entry && entry.title !== "Untitled" ? entry.title : "");
   const [subtitle, setSubtitle] = useState(entry?.subtitle ?? "");
-  const [type, setType] = useState(entry?.type ?? "BLOG");
   const [tags, setTags] = useState(entry?.tags.join(", ") ?? "");
   const [slug, setSlug] = useState(entry?.slug ?? "");
   const [summary, setSummary] = useState(entry?.summary ?? "");
@@ -154,9 +151,9 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
   });
 
   // Latest form values for the save function (avoids stale closures).
-  const values = useRef({ id, title, subtitle, type, tags, slug, summary, featured, coverImage });
+  const values = useRef({ id, title, subtitle, tags, slug, summary, featured, coverImage });
   useLayoutEffect(() => {
-    values.current = { id, title, subtitle, type, tags, slug, summary, featured, coverImage };
+    values.current = { id, title, subtitle, tags, slug, summary, featured, coverImage };
   });
 
   type Values = typeof values.current;
@@ -168,7 +165,6 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
         id: v.id,
         title: v.title,
         subtitle: v.subtitle,
-        type: v.type,
         tags: v.tags,
         slug: v.slug,
         summary: v.summary,
@@ -591,15 +587,6 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
             )}
             <p className="text-xs text-muted-foreground">Shown on the timeline and at the top of the article. Without one, the first image is used on the timeline.</p>
           </div>
-          <Field id="entry-type" label="Type">
-            <Select id="entry-type" value={type} onChange={(e) => field(setType)(e.target.value)}>
-              {TYPE_ORDER.map((t) => (
-                <option key={t} value={t}>
-                  {TYPE_META[t].label}
-                </option>
-              ))}
-            </Select>
-          </Field>
           <Field id="entry-tags" label="Tags" hint="Comma separated.">
             <Input id="entry-tags" value={tags} onChange={(e) => field(setTags)(e.target.value)} placeholder="ai, agents, rag" />
           </Field>

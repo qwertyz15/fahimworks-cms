@@ -10,7 +10,7 @@ import { Input, Select, Textarea } from "@/components/ui/input";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Switch } from "@/components/ui/switch";
 import { useFormAction } from "@/components/use-form-action";
-import { TYPE_LABELS } from "./badges";
+import { IMPORT_TYPE_LABELS } from "./badges";
 
 export interface EditableContent {
   id: string;
@@ -47,7 +47,7 @@ export function ContentEditForm({ content }: { content: EditableContent }) {
             </Field>
             <Field id="type" label="Type" error={errors?.type}>
               <Select id="type" name="type" defaultValue={content.type}>
-                {Object.entries(TYPE_LABELS).map(([v, l]) => (
+                {Object.entries(IMPORT_TYPE_LABELS).map(([v, l]) => (
                   <option key={v} value={v}>
                     {l}
                   </option>

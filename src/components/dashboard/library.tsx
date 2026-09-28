@@ -60,7 +60,6 @@ function GridCard({ item }: { item: LibraryItem }) {
         )}
         <span className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-[11px] font-medium shadow-sm backdrop-blur">
           <meta.icon className="size-3" /> {meta.label}
-          {item.source === "WRITTEN" && <span className="text-muted-foreground">· Notebook</span>}
         </span>
         {item.publicUrl && <OpenOriginal url={item.publicUrl} className="absolute top-2 right-2 bg-background/90 text-foreground shadow-sm backdrop-blur hover:bg-background" />}
       </div>
@@ -115,7 +114,7 @@ function ListRows({ items }: { items: LibraryItem[] }) {
                     {item.title}
                   </Link>
                   <span className="block truncate text-xs text-muted-foreground md:hidden">
-                    {meta.label} · {item.url ? displayHost(item.url) : "Notebook"} · {formatDate(item.updatedAt)}
+                    {meta.label} · {item.url ? `${displayHost(item.url)} · ` : ""}{formatDate(item.updatedAt)}
                   </span>
                 </span>
               </span>
@@ -128,7 +127,7 @@ function ListRows({ items }: { items: LibraryItem[] }) {
                   <PublishToggle id={item.id} status={item.status} source={item.source} extractionStatus={item.extractionStatus} className="h-6 px-1.5" />
                 </span>
               </span>
-              <span className="hidden truncate text-[13px] text-muted-foreground md:block">{item.url ? (item.siteName ?? displayHost(item.url)) : "Notebook"}</span>
+              <span className="hidden truncate text-[13px] text-muted-foreground md:block">{item.url ? (item.siteName ?? displayHost(item.url)) : "Written here"}</span>
               <span className="hidden text-right text-[13px] whitespace-nowrap text-muted-foreground md:block">{formatDate(item.updatedAt)}</span>
               {item.publicUrl ? <OpenOriginal url={item.publicUrl} className="justify-self-end" /> : <span className="size-7" aria-hidden />}
             </li>
@@ -192,7 +191,7 @@ export function Library({
   return (
     <>
       {/* One card per content type — each doubles as a filter for the library below. */}
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Content by type">
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" aria-label="Content by type">
         {TYPE_ORDER.map((type) => {
           const meta = TYPE_META[type];
           const selected = active === type;

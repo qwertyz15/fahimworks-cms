@@ -10,7 +10,7 @@ import { Input, Select } from "@/components/ui/input";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { cn, displayHost } from "@/lib/utils";
 import { useFormAction } from "@/components/use-form-action";
-import { TYPE_LABELS } from "./badges";
+import { IMPORT_TYPE_LABELS } from "./badges";
 import { DuplicateWarnings } from "./duplicate-warnings";
 import { Thumb } from "./thumb";
 
@@ -37,7 +37,7 @@ export function AddContentWizard() {
               </Field>
               <Field id="type" label="Type">
                 <Select id="type" name="type" value={type} onChange={(e) => setType(e.target.value)}>
-                  {Object.entries(TYPE_LABELS).map(([v, l]) => (
+                  {Object.entries(IMPORT_TYPE_LABELS).map(([v, l]) => (
                     <option key={v} value={v}>
                       {l}
                     </option>

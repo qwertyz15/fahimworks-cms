@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { parseSubmittedUrl } from "./url";
 
-export const CONTENT_TYPES = ["BLOG", "TUTORIAL", "ARTICLE", "PROJECT"] as const;
+/** Every content type (filters, stats, public API). */
+export const CONTENT_TYPES = ["BLOG", "TUTORIAL", "ARTICLE", "PROJECT", "NOTEBOOK"] as const;
+/** Types an imported (URL) item can have. NOTEBOOK is only for posts written in the Notebook. */
+export const IMPORT_TYPES = ["BLOG", "TUTORIAL", "ARTICLE", "PROJECT"] as const;
 
 const trimmed = (max: number) => z.string().trim().max(max);
 
@@ -71,7 +74,7 @@ export const tagsSchema = z
 
 export const createContentSchema = z.object({
   url: urlSchema,
-  type: z.enum(CONTENT_TYPES),
+  type: z.enum(IMPORT_TYPES),
   tags: tagsSchema,
   /** "publish" = extract and publish immediately; "review" = stop at Waiting for approval. */
   intent: z.enum(["publish", "review"]).default("publish"),
@@ -83,7 +86,7 @@ export const updateContentSchema = z.object({
   id: z.string().min(1).max(64),
   url: urlSchema,
   title: trimmed(300).min(1, "Title is required."),
-  type: z.enum(CONTENT_TYPES),
+  type: z.enum(IMPORT_TYPES),
   description: trimmed(2000).transform((v) => v || null).nullable(),
   summary: trimmed(5000).transform((v) => v || null).nullable(),
   thumbnail: optionalUrl,
@@ -161,7 +164,6 @@ export const saveEntrySchema = z.object({
   id: z.string().min(1).max(64).optional(),
   title: z.string().max(300).default(""),
   subtitle: trimmed(300).transform((v) => v || null).nullable().default(null),
-  type: z.enum(CONTENT_TYPES).default("BLOG"),
   tags: tagsSchema,
   slug: z
     .string()

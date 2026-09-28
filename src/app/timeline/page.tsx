@@ -16,7 +16,7 @@ async function profile() {
   const s = await getSettings();
   const name = s.profileName?.trim() || s.siteName;
   const tagline = s.profileTagline?.trim() || null;
-  return { s, name, tagline, description: tagline ?? `Blogs, tutorials, articles and projects by ${name}.` };
+  return { s, name, tagline, description: tagline ?? `Blogs, tutorials, articles, notes and projects by ${name}.` };
 }
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -79,7 +79,10 @@ export default async function TimelinePage() {
   const since = years.length ? Math.min(...years) : null;
   const typeSummary = TYPE_ORDER.map((t) => {
     const n = items.filter((i) => i.type === t).length;
-    return n ? `${n} ${n === 1 ? TYPE_META[t].label : TYPE_META[t].plural}` : null;
+    if (!n) return null;
+    // "3 notebook posts" reads better than "3 Notebook".
+    if (t === "NOTEBOOK") return `${n} notebook ${n === 1 ? "post" : "posts"}`;
+    return `${n} ${n === 1 ? TYPE_META[t].label : TYPE_META[t].plural}`;
   }).filter(Boolean);
 
   const links = [

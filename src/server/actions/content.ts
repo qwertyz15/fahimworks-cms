@@ -4,7 +4,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { RATE_LIMITS } from "@/lib/rate-limit";
-import { CONTENT_TYPES, createContentSchema, idSchema, updateContentSchema, urlSchema } from "@/lib/validation";
+import { IMPORT_TYPES, createContentSchema, idSchema, updateContentSchema, urlSchema } from "@/lib/validation";
 import {
   publishContent,
   createContent,
@@ -33,7 +33,7 @@ export async function previewUrlAction(_prev: ActionResult<UrlPreview>, form: Fo
   return adminAction(
     async () => {
       const url = urlSchema.parse(formString(form, "url"));
-      const type = z.enum(CONTENT_TYPES).parse(formString(form, "type") || "BLOG");
+      const type = z.enum(IMPORT_TYPES).parse(formString(form, "type") || "BLOG");
       const data = await previewUrl(url, type);
       return { ok: true, data };
     },

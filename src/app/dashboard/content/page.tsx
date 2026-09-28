@@ -70,7 +70,7 @@ export default async function ContentPage({ searchParams }: PageProps<"/dashboar
                 <Thumb src={item.thumbnail} className="mt-0.5 size-9 shrink-0" />
                 <Link href={itemHref(item)} className="min-w-0 flex-1 space-y-1.5">
                   <p className="truncate text-sm font-medium">{item.title}</p>
-                  <p className="truncate text-xs text-muted-foreground">{item.url ? displayHost(item.url) : "Notebook"} · {formatDate(item.publishedAt ?? item.createdAt)}</p>
+                  <p className="truncate text-xs text-muted-foreground">{item.url ? displayHost(item.url) : "Written here"} · {formatDate(item.publishedAt ?? item.createdAt)}</p>
                   <div className="flex flex-wrap gap-1.5">
                     <TypeBadge type={item.type} />
                     <StatusBadge status={item.status} />
@@ -112,12 +112,12 @@ export default async function ContentPage({ searchParams }: PageProps<"/dashboar
                       ) : (
                         item.publicUrl ? (
                           <a href={item.publicUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
-                            <NotebookPen className="size-3.5 shrink-0" /> <span className="truncate">Notebook article</span>
+                            <NotebookPen className="size-3.5 shrink-0" /> <span className="truncate">Public article</span>
                             <ExternalLink className="size-3 shrink-0" />
                           </a>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-[13px] text-muted-foreground">
-                            <NotebookPen className="size-3.5" /> Notebook
+                            <NotebookPen className="size-3.5" /> Not published yet
                           </span>
                         )
                       )}
