@@ -33,7 +33,8 @@ export interface EditableEntry {
   readingMinutes: number;
 }
 
-const AUTOSAVE_MS = 2000;
+/** Drafts autosave this long after the last change. Ctrl+S / Save saves immediately. */
+const AUTOSAVE_MS = 10_000;
 const timeFmt = new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit" });
 
 export function EntryEditor({ entry }: { entry: EditableEntry | null }) {
@@ -188,15 +189,19 @@ export function EntryEditor({ entry }: { entry: EditableEntry | null }) {
     <span className="inline-flex items-center gap-1.5">
       <Loader2 className="size-3.5 animate-spin" /> Saving…
     </span>
+  ) : !dirty && !id ? (
+    <span>Not saved yet</span>
   ) : dirty ? (
-    <span>{published ? "Unsaved changes — not live yet" : "Editing…"}</span>
-  ) : savedAt && id ? (
-    <span className="inline-flex items-center gap-1.5">
-      <Check className="size-3.5 text-success" /> Saved · {timeFmt.format(new Date(savedAt))}
+    <span className="inline-flex items-center gap-1.5 font-medium text-warning">
+      <span className="size-2 rounded-full bg-warning" aria-hidden />
+      {published ? "Unsaved changes — not live yet" : "Unsaved changes"}
     </span>
   ) : (
-    <span>Not saved yet</span>
+    <span className="inline-flex items-center gap-1.5 font-medium text-success">
+      <Check className="size-3.5" /> Saved{savedAt ? ` · ${timeFmt.format(new Date(savedAt))}` : ""}
+    </span>
   );
+  const isSaved = !dirty && !saving && !error && Boolean(id);
 
   return (
     <div className="-mx-4 -mt-6 sm:-mx-6 lg:-mx-8 lg:-mt-8">
@@ -215,8 +220,16 @@ export function EntryEditor({ entry }: { entry: EditableEntry | null }) {
           <span className="hidden text-xs text-muted-foreground sm:inline">
             {words.toLocaleString()} words · {Math.max(words ? 1 : 0, Math.round(words / 230))} min read
           </span>
-          <Button size="sm" variant={dirty ? "primary" : "outline"} loading={saving} onClick={() => void save()} title="Save (Ctrl+S)">
-            {published ? "Save & update live" : "Save"}
+          <Button size="sm" variant={isSaved ? "outline" : "primary"} loading={saving} disabled={isSaved} onClick={() => void save()} title="Save (Ctrl+S)">
+            {isSaved ? (
+              <>
+                <Check /> Saved
+              </>
+            ) : published ? (
+              "Save & update live"
+            ) : (
+              "Save"
+            )}
           </Button>
         </div>
       </div>
