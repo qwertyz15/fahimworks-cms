@@ -7,13 +7,15 @@ export interface TypeMeta {
   icon: LucideIcon;
   /** Icon tile colours (light + dark). */
   tile: string;
+  /** Solid accent (timeline dots). */
+  dot: string;
 }
 
 export const TYPE_META: Record<ContentType, TypeMeta> = {
-  BLOG: { label: "Blog", plural: "Blogs", icon: BookOpen, tile: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-300" },
-  TUTORIAL: { label: "Tutorial", plural: "Tutorials", icon: GraduationCap, tile: "bg-sky-500/10 text-sky-600 dark:text-sky-300" },
-  ARTICLE: { label: "Article", plural: "Articles", icon: Newspaper, tile: "bg-pink-500/10 text-pink-600 dark:text-pink-300" },
-  PROJECT: { label: "Project", plural: "Projects", icon: FolderGit2, tile: "bg-amber-500/12 text-amber-600 dark:text-amber-300" },
+  BLOG: { label: "Blog", plural: "Blogs", icon: BookOpen, tile: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-300", dot: "bg-indigo-500" },
+  TUTORIAL: { label: "Tutorial", plural: "Tutorials", icon: GraduationCap, tile: "bg-sky-500/10 text-sky-600 dark:text-sky-300", dot: "bg-sky-500" },
+  ARTICLE: { label: "Article", plural: "Articles", icon: Newspaper, tile: "bg-pink-500/10 text-pink-600 dark:text-pink-300", dot: "bg-pink-500" },
+  PROJECT: { label: "Project", plural: "Projects", icon: FolderGit2, tile: "bg-amber-500/12 text-amber-600 dark:text-amber-300", dot: "bg-amber-500" },
 };
 
 export const TYPE_ORDER: ContentType[] = ["BLOG", "TUTORIAL", "ARTICLE", "PROJECT"];

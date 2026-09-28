@@ -5,6 +5,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { GithubIcon, LinkedinIcon, XIcon } from "@/components/timeline/brand-icons";
 import { Timeline } from "@/components/timeline/timeline";
 import { timelineUrl } from "@/lib/timeline";
+import { TYPE_META, TYPE_ORDER } from "@/components/dashboard/content-types";
 import { getTimelineItems } from "@/server/queries/public";
 import { getSettings } from "@/server/services/settings";
 
@@ -33,17 +34,45 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+type ProfileLink = { href: string; label: string; icon: typeof Globe };
+
+function ProfileLinks({ links, compact }: { links: ProfileLink[]; compact?: boolean }) {
+  if (!links.length) return null;
+  return (
+    <nav aria-label={compact ? "Profiles (footer)" : "Profiles"} className="flex flex-wrap gap-2">
+      {links.map((l) => (
+        <a
+          key={l.label}
+          href={l.href}
+          target={l.href.startsWith("mailto:") ? undefined : "_blank"}
+          rel="noopener noreferrer me"
+          className={
+            compact
+              ? "inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              : "inline-flex items-center gap-2 rounded-full border bg-surface/80 px-4 py-2 text-sm font-medium text-foreground/80 shadow-card backdrop-blur transition hover:-translate-y-0.5 hover:border-primary/40 hover:text-foreground"
+          }
+        >
+          <l.icon className={compact ? "size-3.5" : "size-4"} /> {l.label}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
 export default async function TimelinePage() {
   const { s, name, tagline } = await profile();
   if (!s.timelineEnabled) notFound();
   const items = await getTimelineItems();
 
-  const initials = name.split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
   const years = items.flatMap((i) => {
     const d = i.publishDate ?? i.publishedAt;
     return d ? [new Date(d).getFullYear()] : [];
   });
   const since = years.length ? Math.min(...years) : null;
+  const typeSummary = TYPE_ORDER.map((t) => {
+    const n = items.filter((i) => i.type === t).length;
+    return n ? `${n} ${n === 1 ? TYPE_META[t].label : TYPE_META[t].plural}` : null;
+  }).filter(Boolean);
 
   const links = [
     s.profileGithub && { href: s.profileGithub, label: "GitHub", icon: GithubIcon },
@@ -51,54 +80,58 @@ export default async function TimelinePage() {
     s.profileX && { href: s.profileX, label: "X", icon: XIcon },
     s.profileWebsite && { href: s.profileWebsite, label: "Website", icon: Globe },
     s.profileEmail && { href: `mailto:${s.profileEmail}`, label: "Email", icon: Mail },
-  ].filter(Boolean) as { href: string; label: string; icon: typeof Globe }[];
+  ].filter(Boolean) as ProfileLink[];
 
   return (
-    <div className="min-h-dvh bg-background">
-      <div className="mx-auto w-full max-w-3xl px-4 pt-6 pb-16 sm:px-6">
+    <div className="relative min-h-dvh overflow-x-clip bg-background">
+      {/* Decorative backdrop: soft glow + dot grid, fading out below the header. */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[36rem]">
+        <div className="dot-grid absolute inset-0 [mask-image:radial-gradient(ellipse_70%_60%_at_50%_0%,black,transparent)]" />
+        <div className="absolute -top-40 left-1/2 h-[28rem] w-[56rem] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,color-mix(in_oklch,var(--color-primary)_28%,transparent),transparent)] blur-2xl" />
+        <div className="absolute -top-24 left-[62%] h-72 w-72 rounded-full bg-[radial-gradient(closest-side,color-mix(in_oklch,#ec4899_20%,transparent),transparent)] blur-2xl" />
+      </div>
+
+      <div className="relative mx-auto w-full max-w-4xl px-4 pt-6 pb-20 sm:px-6">
         <div className="flex justify-end">
           <ThemeToggle />
         </div>
 
-        <header className="mt-6 mb-12 space-y-5">
-          <div className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-violet-500 text-xl font-semibold text-primary-foreground shadow-pop" aria-hidden>
-            {initials}
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{name}</h1>
-            {tagline && <p className="max-w-xl text-base text-muted-foreground sm:text-lg">{tagline}</p>}
+        <header className="animate-fade-up mt-10 mb-16 space-y-6 sm:mt-16">
+          <p className="inline-flex items-center gap-2 rounded-full border bg-surface/70 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur">
+            <span className="relative flex size-2">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-60 motion-reduce:hidden" />
+              <span className="relative inline-flex size-2 rounded-full bg-success" />
+            </span>
+            Writing &amp; projects timeline
+          </p>
+          <h1 className="bg-gradient-to-br from-foreground via-foreground to-foreground/55 bg-clip-text pb-1 text-5xl font-semibold tracking-tight text-transparent sm:text-6xl md:text-7xl">
+            {name}
+          </h1>
+          {tagline && <p className="max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">{tagline}</p>}
+          {(typeSummary.length > 0 || since) && (
             <p className="text-sm text-muted-foreground">
-              {items.length} piece{items.length === 1 ? "" : "s"} of work{since ? ` since ${since}` : ""}
+              {typeSummary.join(" · ")}
+              {since && <> · since {since}</>}
             </p>
-          </div>
-          {links.length > 0 && (
-            <nav aria-label="Profiles" className="flex flex-wrap gap-2">
-              {links.map((l) => (
-                <a
-                  key={l.label}
-                  href={l.href}
-                  target={l.href.startsWith("mailto:") ? undefined : "_blank"}
-                  rel="noopener noreferrer me"
-                  className="inline-flex items-center gap-1.5 rounded-lg border bg-surface px-3 py-1.5 text-[13px] font-medium text-muted-foreground shadow-card transition-colors hover:text-foreground"
-                >
-                  <l.icon className="size-3.5" /> {l.label}
-                </a>
-              ))}
-            </nav>
           )}
+          <ProfileLinks links={links} />
         </header>
 
         <Timeline items={items} />
 
-        <footer className="mt-16 flex flex-wrap items-center justify-between gap-3 border-t pt-6 text-xs text-muted-foreground">
-          <span>
-            © {new Date().getFullYear()} {name}
-          </span>
-          {s.publicApiEnabled && (
-            <a href="/feed.xml" className="inline-flex items-center gap-1 hover:text-foreground">
-              <Rss className="size-3.5" /> RSS
-            </a>
-          )}
+        <footer className="mt-24 flex flex-col gap-4 border-t pt-8 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-medium">{name}</p>
+            <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} · All work links to its original source.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <ProfileLinks links={links} compact />
+            {s.publicApiEnabled && (
+              <a href="/feed.xml" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
+                <Rss className="size-3.5" /> RSS
+              </a>
+            )}
+          </div>
         </footer>
       </div>
     </div>
