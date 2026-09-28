@@ -12,6 +12,13 @@ describe("objectKey", () => {
     expect(objectKey("photo.png", "image/jpeg")).toMatch(/\.jpg$/);
   });
 
+  it("maps audio types to their extension, and keeps kinds separate", () => {
+    expect(objectKey("talk.mp3", "audio/mpeg", new Date(), "audio")).toMatch(/-talk\.mp3$/);
+    expect(objectKey("memo", "audio/x-m4a", new Date(), "audio")).toMatch(/\.m4a$/);
+    expect(() => objectKey("talk.mp3", "audio/mpeg", new Date(), "image")).toThrow(StorageError);
+    expect(() => objectKey("page.html", "text/html", new Date(), "audio")).toThrow(/MP3, M4A, WAV and OGG/);
+  });
+
   it.each(["image/svg+xml", "text/html", "application/pdf", ""])("refuses %j", (type) => {
     expect(() => objectKey("x", type)).toThrow(StorageError);
   });

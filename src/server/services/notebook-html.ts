@@ -2,7 +2,7 @@ import * as cheerio from "cheerio";
 import { common, createLowlight } from "lowlight";
 import sanitizeHtml from "sanitize-html";
 import { countWords } from "./extraction/parse";
-import { EMBED_HOSTS, EMBED_SRC_RE, HIGHLIGHT_COLORS, TEXT_COLORS } from "@/lib/editor-shared";
+import { ALIGNMENTS, EMBED_HOSTS, EMBED_SRC_RE, HIGHLIGHT_COLORS, IMAGE_WIDTHS, TEXT_COLORS } from "@/lib/editor-shared";
 
 /**
  * Server-side processing of Notebook (Tiptap) HTML. Pure functions — no
@@ -14,6 +14,9 @@ import { EMBED_HOSTS, EMBED_SRC_RE, HIGHLIGHT_COLORS, TEXT_COLORS } from "@/lib/
  */
 const TEXT_COLOR_SET = new Set<string>(TEXT_COLORS);
 const HIGHLIGHT_SET = new Set<string>(HIGHLIGHT_COLORS);
+const ALIGN_SET = new Set<string>(ALIGNMENTS.filter((a) => a !== "left"));
+const WIDTH_SET = new Set<string>(IMAGE_WIDTHS);
+const ALIGNABLE = ["p", "h1", "h2", "h3", "h4"] as const;
 const SPAN_CLASSES = [/^hljs(-[\w-]+)?$/, /^attachment-(name|meta)$/];
 
 const OPTIONS: sanitizeHtml.IOptions = {
@@ -22,14 +25,16 @@ const OPTIONS: sanitizeHtml.IOptions = {
     "strong", "b", "em", "i", "u", "s", "del", "code", "pre", "span", "mark", "sub", "sup",
     "a", "ul", "ol", "li", "blockquote", "label", "input", "div",
     "table", "colgroup", "col", "thead", "tbody", "tr", "th", "td",
-    "img", "figure", "figcaption", "video", "iframe",
+    "img", "figure", "figcaption", "video", "audio", "iframe",
   ],
   allowedAttributes: {
     a: ["href", "title", "target", "rel", "download", "data-attachment", "data-size", "data-mime"],
     img: ["src", "alt", "title", "width", "height", "loading", "referrerpolicy"],
     video: ["src", "controls", "preload", "playsinline"],
+    audio: ["src", "controls", "preload"],
     iframe: ["src", "title", "allow", "allowfullscreen", "loading", "referrerpolicy"],
-    figure: ["data-video"],
+    figure: ["data-video", "data-audio", "data-width"],
+    ...Object.fromEntries(ALIGNABLE.map((t) => [t, ["data-align"]])),
     figcaption: [],
     code: ["class"],
     pre: ["class"],
@@ -52,7 +57,7 @@ const OPTIONS: sanitizeHtml.IOptions = {
   allowedSchemes: ["https", "http", "mailto"],
   // http is allowed for img/video only so the transforms below can keep media from
   // the configured storage origin (local MinIO); every other http source is dropped.
-  allowedSchemesByTag: { img: ["https", "http"], video: ["https", "http"], iframe: ["https"] },
+  allowedSchemesByTag: { img: ["https", "http"], video: ["https", "http"], audio: ["https", "http"], iframe: ["https"] },
   allowedIframeHostnames: EMBED_HOSTS,
   allowIframeRelativeUrls: false,
   allowProtocolRelative: false,
@@ -99,6 +104,13 @@ export function sanitizeNotebookHtml(html: string, opts: SanitizeOptions = {}): 
         // Always user-controlled playback: controls on, never autoplay.
         return { tagName, attribs: { ...(src ? { src } : {}), controls: "true", preload: "metadata", playsinline: "true" } };
       },
+      audio: (tagName, attribs) => {
+        const src = safeMediaSrc(attribs.src);
+        return { tagName, attribs: { ...(src ? { src } : {}), controls: "true", preload: "metadata" } };
+      },
+      ...Object.fromEntries(
+        ALIGNABLE.map((t) => [t, (tagName: string, attribs: sanitizeHtml.Attributes) => ({ tagName, attribs: keepIf(attribs, "data-align", (v) => ALIGN_SET.has(v)) })]),
+      ),
       iframe: (tagName, attribs) => {
         const src = EMBED_SRC_RE.test(attribs.src ?? "") ? attribs.src! : "";
         return {
@@ -123,10 +135,14 @@ export function sanitizeNotebookHtml(html: string, opts: SanitizeOptions = {}): 
       // Checklist ticks are read-only on the page.
       input: (tagName, attribs) => ({ tagName, attribs: { type: attribs.type === "checkbox" ? "checkbox" : "hidden-invalid", ...("checked" in attribs ? { checked: "checked" } : {}), disabled: "disabled" } }),
       div: (tagName, attribs) => ({ tagName, attribs: keepIf(attribs, "data-video-embed", (v) => v === "youtube" || v === "vimeo") }),
-      figure: (tagName, attribs) => ({ tagName, attribs: keepIf(attribs, "data-video", (v) => v === "") }),
+      figure: (tagName, attribs) => {
+        keepIf(attribs, "data-video", (v) => v === "");
+        keepIf(attribs, "data-audio", (v) => v === "");
+        return { tagName, attribs: keepIf(attribs, "data-width", (v) => WIDTH_SET.has(v)) };
+      },
     },
     exclusiveFilter: (frame) =>
-      ((frame.tag === "img" || frame.tag === "video" || frame.tag === "iframe") && !frame.attribs.src) ||
+      (["img", "video", "audio", "iframe"].includes(frame.tag) && !frame.attribs.src) ||
       (frame.tag === "input" && frame.attribs.type !== "checkbox"),
   }).trim();
 }
@@ -168,11 +184,11 @@ export function renderNotebookHtml(editorHtml: string, opts: SanitizeOptions = {
   return sanitizeNotebookHtml(highlightCodeBlocks(sanitizeNotebookHtml(editorHtml, opts)), opts);
 }
 
-/** Every uploaded-media URL in (sanitised) HTML: images, videos and attachment links. */
+/** Every uploaded-media URL in (sanitised) HTML: images, videos, audio and attachment links. */
 export function mediaSources(cleanHtml: string): string[] {
   const $ = cheerio.load(cleanHtml, null, false);
   const urls = [
-    ...$("img, video").map((_, el) => $(el).attr("src") ?? "").get(),
+    ...$("img, video, audio").map((_, el) => $(el).attr("src") ?? "").get(),
     ...$("a[data-attachment]").map((_, el) => $(el).attr("href") ?? "").get(),
   ];
   return urls.filter(Boolean);

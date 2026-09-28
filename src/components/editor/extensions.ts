@@ -9,7 +9,7 @@ import { common, createLowlight } from "lowlight";
 import { CodeBlockView } from "./code-block-view";
 import { TaskItem, TaskList } from "@tiptap/extension-list";
 import { Figure } from "./figure";
-import { Attachment, NamedHighlight, TextColorMark, VideoEmbed, VideoFile } from "./rich-nodes";
+import { Attachment, AudioFile, DataTextAlign, NamedHighlight, TextColorMark, VideoEmbed, VideoFile } from "./rich-nodes";
 import { SlashCommand } from "./slash-menu";
 
 export const lowlight = createLowlight(common);
@@ -18,7 +18,7 @@ export function notebookExtensions() {
   return [
     StarterKit.configure({
       codeBlock: false, // replaced by the syntax-highlighting code block below
-      heading: { levels: [1, 2, 3] },
+      heading: { levels: [1, 2, 3, 4] },
       link: {
         openOnClick: false,
         autolink: true,
@@ -40,7 +40,9 @@ export function notebookExtensions() {
     NamedHighlight,
     VideoEmbed,
     VideoFile,
+    AudioFile,
     Attachment,
+    DataTextAlign,
     Placeholder.configure({
       placeholder: ({ node }) => (node.type.name === "heading" ? "Heading" : "Write, or type '/' for blocks…"),
     }),

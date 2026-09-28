@@ -3,10 +3,11 @@
 /* eslint-disable @next/next/no-img-element -- video thumbnails from YouTube */
 import { Mark, Node, mergeAttributes } from "@tiptap/core";
 import Highlight from "@tiptap/extension-highlight";
+import TextAlign from "@tiptap/extension-text-align";
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from "@tiptap/react";
-import { FileText, Play, Trash2 } from "lucide-react";
+import { FileText, Music, Play, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { HIGHLIGHT_COLORS, TEXT_COLORS, embedSrc, parseVideoUrl, type TextColor, type VideoProvider } from "@/lib/editor-shared";
+import { ALIGNMENTS, HIGHLIGHT_COLORS, TEXT_COLORS, embedSrc, parseVideoUrl, type TextColor, type VideoProvider } from "@/lib/editor-shared";
 
 /*
  * Rich blocks and marks for the Notebook editor. Everything renders to plain,
@@ -79,6 +80,28 @@ export const NamedHighlight = Highlight.extend({
   },
 }).configure({ multicolor: true });
 
+// ── Text alignment: data-align="center" (no inline style) ──────────────────
+
+export const DataTextAlign = TextAlign.extend({
+  addGlobalAttributes() {
+    return [
+      {
+        types: this.options.types,
+        attributes: {
+          textAlign: {
+            default: null,
+            parseHTML: (el: HTMLElement) => {
+              const v = el.getAttribute("data-align") ?? el.style.textAlign;
+              return (ALIGNMENTS as readonly string[]).includes(v) && v !== "left" ? v : null;
+            },
+            renderHTML: (attrs: { textAlign?: string | null }) => (attrs.textAlign && attrs.textAlign !== "left" ? { "data-align": attrs.textAlign } : {}),
+          },
+        },
+      },
+    ];
+  },
+}).configure({ types: ["heading", "paragraph"], alignments: [...ALIGNMENTS], defaultAlignment: null });
+
 // ── Video embeds (YouTube / Vimeo) ────────────────────────────────────────
 
 
@@ -86,6 +109,7 @@ declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     videoEmbed: { insertVideoEmbed: (attrs: { provider: VideoProvider; id: string }) => ReturnType };
     videoFile: { insertVideoFile: (attrs: { src: string; caption?: string | null }) => ReturnType };
+    audioFile: { insertAudioFile: (attrs: { src: string; caption?: string | null }) => ReturnType };
     attachment: { insertAttachment: (attrs: { href: string; name: string; size: number; mime: string }) => ReturnType };
   }
 }
@@ -220,6 +244,71 @@ function VideoFileView({ node, updateAttributes, deleteNode, selected, editor }:
           onChange={(e) => updateAttributes({ caption: e.target.value || null })}
           placeholder="Caption (optional)"
           aria-label="Video caption"
+          className="mt-2 w-full rounded-md border bg-background px-2 py-1 text-[13px] outline-none focus:border-ring"
+        />
+      ) : (
+        caption && <figcaption>{caption}</figcaption>
+      )}
+    </NodeViewWrapper>
+  );
+}
+
+// ── Uploaded audio file ───────────────────────────────────────────────────
+
+export const AudioFile = Node.create({
+  name: "audioFile",
+  group: "block",
+  atom: true,
+  draggable: true,
+  addAttributes() {
+    return { src: { default: null }, caption: { default: null } };
+  },
+  parseHTML() {
+    return [
+      {
+        tag: "figure[data-audio]",
+        getAttrs: (el: HTMLElement) => {
+          const src = el.querySelector("audio")?.getAttribute("src");
+          return src ? { src, caption: el.querySelector("figcaption")?.textContent?.trim() || null } : false;
+        },
+      },
+    ];
+  },
+  renderHTML({ node }) {
+    const audio = ["audio", { src: node.attrs.src, controls: "true", preload: "metadata" }] as const;
+    return node.attrs.caption ? ["figure", { "data-audio": "" }, audio, ["figcaption", {}, node.attrs.caption]] : ["figure", { "data-audio": "" }, audio];
+  },
+  addCommands() {
+    return {
+      insertAudioFile:
+        (attrs) =>
+        ({ commands }) =>
+          commands.insertContent({ type: this.name, attrs }),
+    };
+  },
+  addNodeView() {
+    return ReactNodeViewRenderer(AudioFileView);
+  },
+});
+
+function AudioFileView({ node, updateAttributes, deleteNode, selected, editor }: ReactNodeViewProps) {
+  const { src, caption } = node.attrs as { src: string; caption: string | null };
+  return (
+    <NodeViewWrapper as="figure" className={cn("notebook-block notebook-figure relative", selected && "is-selected")} data-drag-handle>
+      <div contentEditable={false} className="relative flex items-center gap-3 rounded-lg border bg-surface p-3 pr-12">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+          <Music className="size-5" />
+        </span>
+        <audio src={src} controls preload="metadata" className="h-10 min-w-0 flex-1" />
+        {editor.isEditable && selected && <RemoveButton onClick={() => deleteNode()} />}
+      </div>
+      {editor.isEditable && selected ? (
+        <input
+          contentEditable={false}
+          value={caption ?? ""}
+          onChange={(e) => updateAttributes({ caption: e.target.value || null })}
+          placeholder="Caption (optional)"
+          aria-label="Audio caption"
           className="mt-2 w-full rounded-md border bg-background px-2 py-1 text-[13px] outline-none focus:border-ring"
         />
       ) : (

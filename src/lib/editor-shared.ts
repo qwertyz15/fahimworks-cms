@@ -44,3 +44,11 @@ export function embedSrc(provider: VideoProvider, id: string): string {
 /** The only iframe sources the sanitiser keeps. */
 export const EMBED_SRC_RE = /^https:\/\/(?:www\.youtube-nocookie\.com\/embed\/[A-Za-z0-9_-]{11}|player\.vimeo\.com\/video\/\d{6,12})(?:\?[A-Za-z0-9=&_-]*)?$/;
 export const EMBED_HOSTS = ["www.youtube-nocookie.com", "player.vimeo.com"];
+
+/** Paragraph / heading alignment, stored as data-align (left = no attribute). */
+export const ALIGNMENTS = ["left", "center", "right", "justify"] as const;
+export type Alignment = (typeof ALIGNMENTS)[number];
+
+/** Image size presets, stored as data-width on the <figure> (none = full column). */
+export const IMAGE_WIDTHS = ["small", "medium", "wide"] as const;
+export type ImageWidth = (typeof IMAGE_WIDTHS)[number];

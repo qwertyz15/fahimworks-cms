@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Clock } from "lucide-react";
 import { TYPE_META } from "@/components/dashboard/content-types";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CodeCopy } from "@/components/timeline/code-copy";
 import { cn } from "@/lib/utils";
 import { isTimelineHost, writtenPostUrl } from "@/lib/timeline";
 import { getPublishedArticle } from "@/server/queries/public";
@@ -109,7 +110,8 @@ export default async function ArticlePage({ params }: PageProps<"/timeline/p/[sl
         )}
 
         {/* contentHtml is sanitised with a strict allowlist on every save (services/notebook-html.ts). */}
-        <article className="prose-content prose-article" dangerouslySetInnerHTML={{ __html: article.contentHtml ?? "" }} />
+        <article id="article-body" className="prose-content prose-article" dangerouslySetInnerHTML={{ __html: article.contentHtml ?? "" }} />
+        <CodeCopy selector="#article-body" />
 
         <footer className="mt-20 flex flex-col gap-4 border-t pt-8 sm:flex-row sm:items-center sm:justify-between">
           <div>

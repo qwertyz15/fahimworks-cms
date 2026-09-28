@@ -18,8 +18,8 @@ import { useRunAction } from "@/components/use-action-toast";
 import { cn } from "@/lib/utils";
 import { notebookExtensions } from "./extensions";
 import { SelectionToolbar, TableToolbar } from "./toolbars";
-import { PICK_FILE_EVENT, PICK_IMAGE_EVENT, PICK_VIDEO_EVENT } from "./slash-menu";
-import { ACCEPTED_IMAGE_TYPES, ACCEPTED_TYPES, FILE_ACCEPT, fileType, kindOf, uploadFile, uploadImage, type UploadKind } from "./upload";
+import { PICK_AUDIO_EVENT, PICK_FILE_EVENT, PICK_IMAGE_EVENT, PICK_VIDEO_EVENT } from "./slash-menu";
+import { ACCEPTED_IMAGE_TYPES, ACCEPTED_TYPES, AUDIO_ACCEPT, FILE_ACCEPT, fileType, kindOf, uploadFile, uploadImage, type UploadKind } from "./upload";
 import { parseVideoUrl } from "./rich-nodes";
 
 export interface EditableEntry {
@@ -88,6 +88,7 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
   const bodyPicker = useRef<HTMLInputElement>(null);
   const videoPicker = useRef<HTMLInputElement>(null);
   const filePicker = useRef<HTMLInputElement>(null);
+  const audioPicker = useRef<HTMLInputElement>(null);
   const [videoDialog, setVideoDialog] = useState(false);
   const [videoUrl, setVideoUrl] = useState("");
   const coverPicker = useRef<HTMLInputElement>(null);
@@ -268,7 +269,7 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
       for (const [i, file] of files.entries()) {
         const kind = forceKind ?? kindOf(file);
         if (!kind) {
-          toast.error(`“${file.name}” can't be added. Images: PNG/JPEG/WebP/GIF/AVIF · Videos: MP4/WebM · Files: PDF, ZIP, Office, CSV, TXT, MD, JSON.`);
+          toast.error(`“${file.name}” can't be added. Images: PNG/JPEG/WebP/GIF/AVIF · Videos: MP4/WebM · Audio: MP3/M4A/WAV/OGG · Files: PDF, ZIP, Office, CSV, TXT, MD, JSON.`);
           continue;
         }
         setUploading({ count: files.length - i, pct: 0 });
@@ -283,6 +284,8 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
               ? { type: "image", attrs: { src: url, alt: file.name.replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " ").trim() || null } }
               : kind === "video"
                 ? { type: "videoFile", attrs: { src: url } }
+                : kind === "audio"
+                  ? { type: "audioFile", attrs: { src: url } }
                 : { type: "attachment", attrs: { href: url, name: file.name, size: file.size, mime: fileType(file) } };
           insertBlock(editor, at, node);
           // Next one goes right after this one.
@@ -312,16 +315,19 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
   useEffect(() => {
     const image = () => bodyPicker.current?.click();
     const file = () => filePicker.current?.click();
+    const audio = () => audioPicker.current?.click();
     const video = () => {
       setVideoUrl("");
       setVideoDialog(true);
     };
     window.addEventListener(PICK_IMAGE_EVENT, image);
     window.addEventListener(PICK_FILE_EVENT, file);
+    window.addEventListener(PICK_AUDIO_EVENT, audio);
     window.addEventListener(PICK_VIDEO_EVENT, video);
     return () => {
       window.removeEventListener(PICK_IMAGE_EVENT, image);
       window.removeEventListener(PICK_FILE_EVENT, file);
+      window.removeEventListener(PICK_AUDIO_EVENT, audio);
       window.removeEventListener(PICK_VIDEO_EVENT, video);
     };
   }, []);
@@ -532,6 +538,17 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
               const files = [...(e.target.files ?? [])];
               e.target.value = "";
               if (files.length) void insertImages(files, undefined, "file");
+            }}
+          />
+          <input
+            ref={audioPicker}
+            type="file"
+            accept={AUDIO_ACCEPT}
+            hidden
+            onChange={(e) => {
+              const files = [...(e.target.files ?? [])];
+              e.target.value = "";
+              if (files.length) void insertImages(files, undefined, "audio");
             }}
           />
           <input

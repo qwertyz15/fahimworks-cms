@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EMBED_SRC_RE, embedSrc, parseVideoUrl } from "@/lib/editor-shared";
-import { sanitizeNotebookHtml as clean } from "@/server/services/notebook-html";
+import { mediaSources, sanitizeNotebookHtml as clean } from "@/server/services/notebook-html";
 
 describe("text colour + highlight", () => {
   it("keeps palette colours", () => {
@@ -88,5 +88,37 @@ describe("uploaded videos + attachments", () => {
     const bad = clean('<a href="https://x.example/f" data-attachment="" data-size="1e9; x" data-mime="text/html\\"><script>" onclick="x()">f</a>');
     expect(bad).not.toContain("data-size");
     expect(bad).not.toContain("onclick");
+  });
+});
+
+describe("headings, alignment and image sizes", () => {
+  it("keeps H4 and valid alignments; left and bogus values are dropped", () => {
+    const out = clean('<h4 data-align="center">T</h4><p data-align="justify">J</p><p data-align="left">L</p><p data-align="evil" style="text-align:center">X</p>');
+    expect(out).toContain('<h4 data-align="center">T</h4>');
+    expect(out).toContain('<p data-align="justify">J</p>');
+    expect(out).toContain("<p>L</p>");
+    expect(out).toContain("<p>X</p>");
+    expect(out).not.toContain("style");
+  });
+  it("keeps image width presets only", () => {
+    expect(clean('<figure data-width="small"><img src="https://m.example/a.png"></figure>')).toContain('<figure data-width="small">');
+    expect(clean('<figure data-width="999px"><img src="https://m.example/a.png"></figure>')).not.toContain("data-width");
+  });
+});
+
+describe("uploaded audio", () => {
+  it("keeps audio with forced controls and no autoplay", () => {
+    const out = clean('<figure data-audio=""><audio src="https://m.example/a.mp3" autoplay loop onplay="x()"></audio><figcaption>Talk</figcaption></figure>');
+    expect(out).toMatch(/<figure data-audio(="")?>/);
+    expect(out).toMatch(/<audio src="https:\/\/m\.example\/a\.mp3" controls="true" preload="metadata"><\/audio>/);
+    expect(out).not.toMatch(/autoplay|loop|onplay/);
+  });
+  it("drops audio from plain http / javascript: sources", () => {
+    expect(clean('<audio src="http://evil.example/a.mp3"></audio>')).not.toContain("<audio");
+    expect(clean('<audio src="javascript:alert(1)"></audio>')).not.toContain("<audio");
+    expect(clean('<audio src="http://localhost:9000/b/a.mp3"></audio>', { imageOrigins: ["http://localhost:9000"] })).toContain("<audio");
+  });
+  it("counts audio as uploaded media", () => {
+    expect(mediaSources('<figure data-audio=""><audio src="https://m.example/a.mp3" controls="true"></audio></figure>')).toEqual(["https://m.example/a.mp3"]);
   });
 });

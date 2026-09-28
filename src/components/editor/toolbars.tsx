@@ -6,6 +6,10 @@ import { useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { PluginKey } from "@tiptap/pm/state";
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
   Baseline,
   Bold,
   Check,
@@ -23,6 +27,14 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HIGHLIGHT_COLORS, TEXT_COLORS, type HighlightColor, type TextColor } from "./rich-nodes";
+import type { Alignment } from "@/lib/editor-shared";
+
+const ALIGN_OPTIONS: { value: Alignment; label: string; icon: typeof AlignLeft }[] = [
+  { value: "left", label: "Align left (Ctrl+Shift+L)", icon: AlignLeft },
+  { value: "center", label: "Align centre (Ctrl+Shift+E)", icon: AlignCenter },
+  { value: "right", label: "Align right (Ctrl+Shift+R)", icon: AlignRight },
+  { value: "justify", label: "Justify (Ctrl+Shift+J)", icon: AlignJustify },
+];
 
 function ToolButton({ active, label, onClick, children, danger }: { active?: boolean; label: string; onClick: () => void; children: ReactNode; danger?: boolean }) {
   return (
@@ -49,7 +61,7 @@ const SAFE_LINK = /^(https?:\/\/|mailto:)/i;
 /** Floating toolbar shown when text is selected (not in code blocks). */
 export function SelectionToolbar({ editor }: { editor: Editor }) {
   const [linkMode, setLinkMode] = useState(false);
-  const [palette, setPalette] = useState<"text" | "highlight" | null>(null);
+  const [palette, setPalette] = useState<"text" | "highlight" | "align" | null>(null);
   const [href, setHref] = useState("");
   const state = useEditorState({
     editor,
@@ -63,6 +75,7 @@ export function SelectionToolbar({ editor }: { editor: Editor }) {
       linkHref: (e.getAttributes("link").href as string | undefined) ?? "",
       textColor: (e.getAttributes("textColor").color as string | undefined) ?? null,
       highlight: e.isActive("highlight") ? ((e.getAttributes("highlight").color as string | undefined) ?? "yellow") : null,
+      align: ((["center", "right", "justify"] as const).find((a) => e.isActive({ textAlign: a })) ?? "left") as Alignment,
     }),
   });
 
@@ -92,7 +105,23 @@ export function SelectionToolbar({ editor }: { editor: Editor }) {
       }}
       className="z-40 flex items-center gap-0.5 rounded-xl border bg-surface p-1 shadow-pop"
     >
-      {palette ? (
+      {palette === "align" ? (
+        <div className="flex items-center gap-0.5" role="group" aria-label="Alignment">
+          {ALIGN_OPTIONS.map((o) => (
+            <ToolButton
+              key={o.value}
+              label={o.label}
+              active={state.align === o.value}
+              onClick={() => {
+                editor.chain().focus().setTextAlign(o.value).run();
+                setPalette(null);
+              }}
+            >
+              <o.icon />
+            </ToolButton>
+          ))}
+        </div>
+      ) : palette ? (
         <div className="flex items-center gap-1 px-1" role="group" aria-label={palette === "text" ? "Text colour" : "Highlight colour"}>
           {(palette === "text" ? TEXT_COLORS : HIGHLIGHT_COLORS).map((c) => (
             <button
@@ -175,6 +204,12 @@ export function SelectionToolbar({ editor }: { editor: Editor }) {
           </ToolButton>
           <ToolButton label="Highlight" active={Boolean(state.highlight)} onClick={() => setPalette("highlight")}>
             <Highlighter />
+          </ToolButton>
+          <ToolButton label="Alignment" active={state.align !== "left"} onClick={() => setPalette("align")}>
+            {(() => {
+              const Icon = ALIGN_OPTIONS.find((o) => o.value === state.align)?.icon ?? AlignLeft;
+              return <Icon />;
+            })()}
           </ToolButton>
           <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
           <ToolButton

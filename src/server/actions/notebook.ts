@@ -77,7 +77,7 @@ export async function deleteEntryAction(entryId: string): Promise<ActionResult> 
 }
 
 const uploadSchema = z.object({
-  kind: z.enum(["image", "video", "file"]).default("image"),
+  kind: z.enum(["image", "video", "audio", "file"]).default("image"),
   filename: z.string().trim().min(1).max(200),
   contentType: z.string().max(100),
   size: z.number().int().positive(),

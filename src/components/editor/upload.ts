@@ -2,12 +2,13 @@
 
 import { createUploadAction } from "@/server/actions/notebook";
 
-export type UploadKind = "image" | "video" | "file";
+export type UploadKind = "image" | "video" | "audio" | "file";
 
 /** Formats the server accepts per kind (mirrors lib/storage.ts). SVG/HTML/scripts are refused. */
 export const ACCEPTED_TYPES: Record<UploadKind, string[]> = {
   image: ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"],
   video: ["video/mp4", "video/webm"],
+  audio: ["audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav", "audio/ogg"],
   file: [
     "application/pdf",
     "application/zip",
@@ -29,7 +30,20 @@ export const ACCEPTED_IMAGE_TYPES = ACCEPTED_TYPES.image;
 /** File picker `accept` for attachments (extensions help when the OS reports no MIME type). */
 export const FILE_ACCEPT = [...ACCEPTED_TYPES.file, ".pdf", ".zip", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".csv", ".txt", ".md", ".json"].join(",");
 
-const EXT_TYPES: Record<string, string> = { md: "text/markdown", csv: "text/csv", json: "application/json", txt: "text/plain", zip: "application/zip" };
+const EXT_TYPES: Record<string, string> = {
+  md: "text/markdown",
+  csv: "text/csv",
+  json: "application/json",
+  txt: "text/plain",
+  zip: "application/zip",
+  mp3: "audio/mpeg",
+  m4a: "audio/mp4",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+};
+
+/** File picker `accept` for audio. */
+export const AUDIO_ACCEPT = [...ACCEPTED_TYPES.audio, ".mp3", ".m4a", ".wav", ".ogg"].join(",");
 
 /** The browser sometimes reports "" for .md etc. — fall back to the extension. */
 export function fileType(file: File): string {
@@ -42,16 +56,18 @@ export function kindOf(file: File): UploadKind | null {
   const t = fileType(file);
   if (ACCEPTED_TYPES.image.includes(t)) return "image";
   if (ACCEPTED_TYPES.video.includes(t)) return "video";
+  if (ACCEPTED_TYPES.audio.includes(t)) return "audio";
   if (ACCEPTED_TYPES.file.includes(t)) return "file";
   return null;
 }
 
 export class UploadError extends Error {}
 
-const NOUN: Record<UploadKind, string> = { image: "image", video: "video", file: "file" };
+const NOUN: Record<UploadKind, string> = { image: "image", video: "video", audio: "audio file", file: "file" };
 const HELP: Record<UploadKind, string> = {
   image: "Use PNG, JPEG, WebP, GIF or AVIF.",
   video: "Use MP4 or WebM (or paste a YouTube / Vimeo link).",
+  audio: "Use MP3, M4A, WAV or OGG.",
   file: "Allowed: PDF, ZIP, Word, Excel, PowerPoint, CSV, TXT, Markdown, JSON.",
 };
 

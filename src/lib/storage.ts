@@ -26,6 +26,15 @@ export const VIDEO_TYPES: Record<string, string> = {
   "video/webm": "webm",
 };
 
+export const AUDIO_TYPES: Record<string, string> = {
+  "audio/mpeg": "mp3",
+  "audio/mp4": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/ogg": "ogg",
+};
+
 /**
  * Downloadable attachments. Anything a browser could render as a page or run
  * (HTML, SVG, JS, executables) is excluded — that allowlist is the protection.
@@ -48,12 +57,13 @@ export const FILE_TYPES: Record<string, string> = {
   "application/json": "json",
 };
 
-export type UploadKind = "image" | "video" | "file";
+export type UploadKind = "image" | "video" | "audio" | "file";
 
-const KIND_TYPES: Record<UploadKind, Record<string, string>> = { image: IMAGE_TYPES, video: VIDEO_TYPES, file: FILE_TYPES };
+const KIND_TYPES: Record<UploadKind, Record<string, string>> = { image: IMAGE_TYPES, video: VIDEO_TYPES, audio: AUDIO_TYPES, file: FILE_TYPES };
 const KIND_ERROR: Record<UploadKind, string> = {
   image: "Only PNG, JPEG, WebP, GIF and AVIF images can be uploaded.",
   video: "Only MP4 and WebM videos can be uploaded.",
+  audio: "Only MP3, M4A, WAV and OGG audio can be uploaded.",
   file: "That file type can't be attached. Allowed: PDF, ZIP, Word, Excel, PowerPoint, CSV, TXT, Markdown, JSON.",
 };
 
@@ -157,7 +167,7 @@ export async function presignUpload(input: { filename: string; contentType: stri
   if (!KIND_TYPES[kind][input.contentType]) throw new StorageError(KIND_ERROR[kind]);
   if (!Number.isInteger(input.size) || input.size <= 0) throw new StorageError("The file is empty.");
   const limit = kind === "image" ? cfg.maxBytes : cfg.maxMediaBytes;
-  const label = kind === "image" ? "Images" : kind === "video" ? "Videos" : "Files";
+  const label = kind === "image" ? "Images" : kind === "video" ? "Videos" : kind === "audio" ? "Audio files" : "Files";
   if (input.size > limit) throw new StorageError(`${label} must be ${Math.round(limit / (1024 * 1024))} MB or smaller.`);
 
   const key = objectKey(input.filename, input.contentType, new Date(), kind);

@@ -5,14 +5,15 @@ import { Extension, type Editor, type Range } from "@tiptap/core";
 import { ReactRenderer } from "@tiptap/react";
 import Suggestion, { type SuggestionKeyDownProps, type SuggestionProps } from "@tiptap/suggestion";
 import { computePosition, flip, offset, shift } from "@floating-ui/dom";
-import { Code2, Heading1, Heading2, Heading3, ImagePlus, List, ListChecks, ListOrdered, Minus, Paperclip, Pilcrow, Quote, Table, Video, type LucideIcon } from "lucide-react";
+import { Code2, Heading1, Heading2, Heading3, Heading4, ImagePlus, List, ListChecks, ListOrdered, Minus, Music, Paperclip, Pilcrow, Quote, Table, Video, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** The "/" command menu: type "/" in the editor to insert a block. */
 
-/** Fired by "/image", "/video" and "/file"; EntryEditor opens the matching picker / dialog. */
+/** Fired by "/image", "/video", "/audio" and "/file"; EntryEditor opens the matching picker / dialog. */
 export const PICK_IMAGE_EVENT = "notebook:pick-image";
 export const PICK_VIDEO_EVENT = "notebook:pick-video";
+export const PICK_AUDIO_EVENT = "notebook:pick-audio";
 export const PICK_FILE_EVENT = "notebook:pick-file";
 
 export interface SlashItem {
@@ -28,6 +29,7 @@ export const SLASH_ITEMS: SlashItem[] = [
   { title: "Heading 1", description: "Large section heading", icon: Heading1, keywords: ["h1", "title"], run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 1 }).run() },
   { title: "Heading 2", description: "Medium section heading", icon: Heading2, keywords: ["h2", "subtitle"], run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 2 }).run() },
   { title: "Heading 3", description: "Small section heading", icon: Heading3, keywords: ["h3"], run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 3 }).run() },
+  { title: "Heading 4", description: "Minor heading", icon: Heading4, keywords: ["h4"], run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 4 }).run() },
   { title: "Bullet list", description: "Unordered list", icon: List, keywords: ["ul", "unordered", "points"], run: (e, r) => e.chain().focus().deleteRange(r).toggleBulletList().run() },
   { title: "Numbered list", description: "Ordered list", icon: ListOrdered, keywords: ["ol", "ordered", "1."], run: (e, r) => e.chain().focus().deleteRange(r).toggleOrderedList().run() },
   { title: "Checklist", description: "List with tick boxes", icon: ListChecks, keywords: ["todo", "task", "checkbox", "[]"], run: (e, r) => e.chain().focus().deleteRange(r).toggleTaskList().run() },
@@ -59,6 +61,16 @@ export const SLASH_ITEMS: SlashItem[] = [
     run: (e, r) => {
       e.chain().focus().deleteRange(r).run();
       window.dispatchEvent(new CustomEvent(PICK_VIDEO_EVENT));
+    },
+  },
+  {
+    title: "Audio",
+    description: "Upload an MP3, M4A, WAV or OGG file",
+    icon: Music,
+    keywords: ["sound", "music", "podcast", "mp3", "voice", "recording"],
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).run();
+      window.dispatchEvent(new CustomEvent(PICK_AUDIO_EVENT));
     },
   },
   {

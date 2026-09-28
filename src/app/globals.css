@@ -130,6 +130,7 @@
 .prose-content h1 { font-size: 1.5rem; }
 .prose-content h2 { font-size: 1.25rem; }
 .prose-content h3 { font-size: 1.1rem; }
+.prose-content h4 { font-size: 1rem; }
 .prose-content a {
   color: var(--color-primary);
   text-decoration: underline;
@@ -392,6 +393,9 @@
 .prose-article h3 {
   font-size: 1.2rem;
 }
+.prose-article h4 {
+  font-size: 1.05rem;
+}
 .prose-article pre {
   font-size: 0.875rem;
   line-height: 1.65;
@@ -577,4 +581,58 @@ mark[data-color="orange"], [data-swatch="orange"] { background: oklch(0.91 0.09 
   outline: 2px solid var(--color-ring);
   outline-offset: 3px;
   border-radius: 0.75rem;
+}
+
+/* ── Alignment, image sizes, audio, code copy ─────────────────── */
+.prose-content [data-align="center"] { text-align: center; }
+.prose-content [data-align="right"] { text-align: right; }
+.prose-content [data-align="justify"] { text-align: justify; hyphens: auto; }
+
+/* Image size presets (none = full column). */
+:is(.prose-content figure, .notebook-figure)[data-width="small"] img { width: min(100%, 22rem); }
+:is(.prose-content figure, .notebook-figure)[data-width="medium"] img { width: min(100%, 34rem); }
+/* "Wide" breaks out of the text column on large screens (article page only). */
+@media (min-width: 64rem) {
+  .prose-article figure[data-width="wide"] {
+    margin-inline: -7rem;
+  }
+  .prose-article figure[data-width="wide"] img {
+    width: 100%;
+  }
+}
+
+.prose-content figure[data-audio] audio {
+  display: block;
+  width: 100%;
+}
+
+.code-wrap {
+  position: relative;
+}
+.code-copy {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  font-family: var(--font-sans);
+  color: var(--color-muted-foreground);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.4rem;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  cursor: pointer;
+}
+.code-wrap:hover .code-copy,
+.code-copy:focus-visible {
+  opacity: 1;
+}
+.code-copy:hover {
+  color: var(--color-foreground);
+}
+@media (hover: none) {
+  .code-copy {
+    opacity: 1;
+  }
 }
