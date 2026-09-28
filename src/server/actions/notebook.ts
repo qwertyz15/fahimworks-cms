@@ -9,7 +9,7 @@ import { deleteEntry, publishEntry, saveEntry, unpublishEntry, type SavedEntry }
 import { adminAction, type ActionResult } from "./result";
 import { z } from "zod";
 import { RATE_LIMITS } from "@/lib/rate-limit";
-import { presignImageUpload, type PresignedUpload } from "@/lib/storage";
+import { presignUpload, type PresignedUpload } from "@/lib/storage";
 import { cleanupUnusedAssets, recordAsset } from "@/server/services/assets";
 
 /** Validate a save payload and store it; returns the saved entry or an error message. */
@@ -77,18 +77,19 @@ export async function deleteEntryAction(entryId: string): Promise<ActionResult> 
 }
 
 const uploadSchema = z.object({
+  kind: z.enum(["image", "video", "file"]).default("image"),
   filename: z.string().trim().min(1).max(200),
   contentType: z.string().max(100),
   size: z.number().int().positive(),
   contentId: z.string().min(1).max(64).nullable().optional(),
 });
 
-/** A 5-minute signed upload URL for one image (admin only, rate limited). */
-export async function createImageUploadAction(payload: unknown): Promise<ActionResult<PresignedUpload>> {
+/** A short-lived signed upload URL for one image / video / file (admin only, rate limited). */
+export async function createUploadAction(payload: unknown): Promise<ActionResult<PresignedUpload>> {
   return adminAction(
     async (user) => {
       const input = uploadSchema.parse(payload);
-      const upload = await presignImageUpload(input);
+      const upload = await presignUpload(input);
       await recordAsset({
         key: upload.key,
         url: upload.publicUrl,

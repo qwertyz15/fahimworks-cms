@@ -33,7 +33,8 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
-      onClose={onClose}
+      // The native "close" event is queued; ignore a stale one that lands after a quick re-open.
+      onClose={() => !ref.current?.open && onClose()}
       onClick={(e) => e.target === ref.current && onClose()}
       className={cn("m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border bg-surface p-0 text-foreground shadow-pop", className)}
     >

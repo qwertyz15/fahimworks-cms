@@ -6,8 +6,10 @@ import { useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { PluginKey } from "@tiptap/pm/state";
 import {
+  Baseline,
   Bold,
   Check,
+  Highlighter,
   Code,
   Columns3,
   Italic,
@@ -20,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { HIGHLIGHT_COLORS, TEXT_COLORS, type HighlightColor, type TextColor } from "./rich-nodes";
 
 function ToolButton({ active, label, onClick, children, danger }: { active?: boolean; label: string; onClick: () => void; children: ReactNode; danger?: boolean }) {
   return (
@@ -46,6 +49,7 @@ const SAFE_LINK = /^(https?:\/\/|mailto:)/i;
 /** Floating toolbar shown when text is selected (not in code blocks). */
 export function SelectionToolbar({ editor }: { editor: Editor }) {
   const [linkMode, setLinkMode] = useState(false);
+  const [palette, setPalette] = useState<"text" | "highlight" | null>(null);
   const [href, setHref] = useState("");
   const state = useEditorState({
     editor,
@@ -57,6 +61,8 @@ export function SelectionToolbar({ editor }: { editor: Editor }) {
       code: e.isActive("code"),
       link: e.isActive("link"),
       linkHref: (e.getAttributes("link").href as string | undefined) ?? "",
+      textColor: (e.getAttributes("textColor").color as string | undefined) ?? null,
+      highlight: e.isActive("highlight") ? ((e.getAttributes("highlight").color as string | undefined) ?? "yellow") : null,
     }),
   });
 
@@ -76,10 +82,54 @@ export function SelectionToolbar({ editor }: { editor: Editor }) {
       editor={editor}
       pluginKey={new PluginKey("selectionToolbar")}
       shouldShow={({ editor: e, state: s }) => !s.selection.empty && e.isEditable && !e.isActive("codeBlock")}
-      options={{ placement: "top", offset: 8, onHide: () => setLinkMode(false) }}
+      options={{
+        placement: "top",
+        offset: 8,
+        onHide: () => {
+          setLinkMode(false);
+          setPalette(null);
+        },
+      }}
       className="z-40 flex items-center gap-0.5 rounded-xl border bg-surface p-1 shadow-pop"
     >
-      {linkMode ? (
+      {palette ? (
+        <div className="flex items-center gap-1 px-1" role="group" aria-label={palette === "text" ? "Text colour" : "Highlight colour"}>
+          {(palette === "text" ? TEXT_COLORS : HIGHLIGHT_COLORS).map((c) => (
+            <button
+              key={c}
+              type="button"
+              title={c}
+              aria-label={`${palette === "text" ? "Text" : "Highlight"} ${c}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                if (palette === "text") editor.chain().focus().setTextColor(c as TextColor).run();
+                else editor.chain().focus().setHighlight({ color: c as HighlightColor }).run();
+                setPalette(null);
+              }}
+              className={cn(
+                "flex size-7 items-center justify-center rounded-md border text-xs font-semibold",
+                palette === "text" ? "bg-surface" : "",
+                (palette === "text" ? state.textColor : state.highlight) === c && "ring-2 ring-ring",
+              )}
+              {...(palette === "text" ? { "data-text-color": c } : { "data-swatch": c })}
+            >
+              {palette === "text" ? "A" : ""}
+            </button>
+          ))}
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              if (palette === "text") editor.chain().focus().unsetTextColor().run();
+              else editor.chain().focus().unsetHighlight().run();
+              setPalette(null);
+            }}
+            className="h-7 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            None
+          </button>
+        </div>
+      ) : linkMode ? (
         <form
           className="flex items-center gap-1"
           onSubmit={(e) => {
@@ -119,6 +169,12 @@ export function SelectionToolbar({ editor }: { editor: Editor }) {
           </ToolButton>
           <ToolButton label="Inline code (Ctrl+E)" active={state.code} onClick={() => editor.chain().focus().toggleCode().run()}>
             <Code />
+          </ToolButton>
+          <ToolButton label="Text colour" active={Boolean(state.textColor)} onClick={() => setPalette("text")}>
+            <Baseline />
+          </ToolButton>
+          <ToolButton label="Highlight" active={Boolean(state.highlight)} onClick={() => setPalette("highlight")}>
+            <Highlighter />
           </ToolButton>
           <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
           <ToolButton

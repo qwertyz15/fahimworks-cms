@@ -32,10 +32,13 @@ function withCsp(req: NextRequest, rewriteTo?: URL) {
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' https: data: blob:${envOrigin("S3_PUBLIC_URL") ? ` ${envOrigin("S3_PUBLIC_URL")}` : ""}`,
     "font-src 'self' data:",
+    // Uploaded Notebook videos play from object storage.
+    `media-src 'self' https: blob:${envOrigin("S3_PUBLIC_URL") ? ` ${envOrigin("S3_PUBLIC_URL")}` : ""}`,
     // Notebook images are PUT straight to the storage endpoint (presigned URLs).
     `connect-src 'self'${envOrigin("S3_ENDPOINT") ? ` ${envOrigin("S3_ENDPOINT")}` : ""}${dev ? " ws: wss:" : ""}`,
     "frame-ancestors 'none'",
-    "frame-src 'none'",
+    // Only privacy-friendly video players may be embedded (Notebook video embeds).
+    "frame-src https://www.youtube-nocookie.com https://player.vimeo.com",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

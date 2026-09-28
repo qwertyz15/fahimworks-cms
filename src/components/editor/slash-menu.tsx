@@ -5,13 +5,15 @@ import { Extension, type Editor, type Range } from "@tiptap/core";
 import { ReactRenderer } from "@tiptap/react";
 import Suggestion, { type SuggestionKeyDownProps, type SuggestionProps } from "@tiptap/suggestion";
 import { computePosition, flip, offset, shift } from "@floating-ui/dom";
-import { Code2, Heading1, Heading2, Heading3, ImagePlus, List, ListOrdered, Minus, Pilcrow, Quote, Table, type LucideIcon } from "lucide-react";
+import { Code2, Heading1, Heading2, Heading3, ImagePlus, List, ListChecks, ListOrdered, Minus, Paperclip, Pilcrow, Quote, Table, Video, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** The "/" command menu: type "/" in the editor to insert a block. */
 
-/** Fired by the "/image" command; EntryEditor opens its file picker. */
+/** Fired by "/image", "/video" and "/file"; EntryEditor opens the matching picker / dialog. */
 export const PICK_IMAGE_EVENT = "notebook:pick-image";
+export const PICK_VIDEO_EVENT = "notebook:pick-video";
+export const PICK_FILE_EVENT = "notebook:pick-file";
 
 export interface SlashItem {
   title: string;
@@ -28,6 +30,7 @@ export const SLASH_ITEMS: SlashItem[] = [
   { title: "Heading 3", description: "Small section heading", icon: Heading3, keywords: ["h3"], run: (e, r) => e.chain().focus().deleteRange(r).setHeading({ level: 3 }).run() },
   { title: "Bullet list", description: "Unordered list", icon: List, keywords: ["ul", "unordered", "points"], run: (e, r) => e.chain().focus().deleteRange(r).toggleBulletList().run() },
   { title: "Numbered list", description: "Ordered list", icon: ListOrdered, keywords: ["ol", "ordered", "1."], run: (e, r) => e.chain().focus().deleteRange(r).toggleOrderedList().run() },
+  { title: "Checklist", description: "List with tick boxes", icon: ListChecks, keywords: ["todo", "task", "checkbox", "[]"], run: (e, r) => e.chain().focus().deleteRange(r).toggleTaskList().run() },
   { title: "Quote", description: "Highlighted quotation", icon: Quote, keywords: ["blockquote", "cite"], run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run() },
   { title: "Code block", description: "Code with syntax highlighting", icon: Code2, keywords: ["code", "snippet", "pre"], run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run() },
   {
@@ -46,6 +49,26 @@ export const SLASH_ITEMS: SlashItem[] = [
       e.chain().focus().deleteRange(r).run();
       // The editor page owns the file picker; ask it to open.
       window.dispatchEvent(new CustomEvent(PICK_IMAGE_EVENT));
+    },
+  },
+  {
+    title: "Video",
+    description: "YouTube / Vimeo link or an MP4 / WebM file",
+    icon: Video,
+    keywords: ["youtube", "vimeo", "movie", "mp4", "embed"],
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).run();
+      window.dispatchEvent(new CustomEvent(PICK_VIDEO_EVENT));
+    },
+  },
+  {
+    title: "File",
+    description: "Attach a PDF, ZIP, document… (download card)",
+    icon: Paperclip,
+    keywords: ["attachment", "pdf", "upload", "download", "document"],
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).run();
+      window.dispatchEvent(new CustomEvent(PICK_FILE_EVENT));
     },
   },
   { title: "Divider", description: "Horizontal line", icon: Minus, keywords: ["hr", "line", "separator"], run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run() },

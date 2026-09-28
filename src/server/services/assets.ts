@@ -1,10 +1,12 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { deleteObjects } from "@/lib/storage";
+import { mediaSources } from "./notebook-html";
 
 /**
- * Bookkeeping for uploaded images. An asset is "used" when its URL appears in
- * any entry's HTML or as a cover image; unused ones can be cleaned up.
+ * Bookkeeping for uploads (images, videos, attachments). An asset is "used"
+ * when its URL appears in any entry's HTML or as a cover image; unused ones
+ * can be cleaned up.
  */
 
 export async function recordAsset(input: { key: string; url: string; contentType: string; size: number; filename: string | null; uploadedById: string; contentId?: string | null }) {
@@ -23,7 +25,7 @@ async function referencedUrls(): Promise<Set<string>> {
   const refs = new Set<string>();
   for (const r of rows) {
     if (r.coverImage) refs.add(r.coverImage);
-    for (const m of (r.contentHtml ?? "").matchAll(/<img[^>]+src="([^"]+)"/g)) refs.add(m[1]!);
+    for (const url of mediaSources(r.contentHtml ?? "")) refs.add(url);
   }
   return refs;
 }

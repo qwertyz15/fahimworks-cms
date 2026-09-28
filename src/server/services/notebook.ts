@@ -7,7 +7,7 @@ import { audit } from "./audit";
 import { tagConnect, uniqueSlug } from "./content-helpers";
 import { ContentError } from "./content";
 import { transition, WorkflowError } from "./workflow";
-import { deriveFields, imageSources, renderNotebookHtml } from "./notebook-html";
+import { deriveFields, mediaSources, renderNotebookHtml } from "./notebook-html";
 import { cleanupUnusedAssets, linkAssets } from "./assets";
 import { storagePublicOrigin } from "@/lib/storage";
 
@@ -92,7 +92,7 @@ export async function saveEntry(input: SaveEntryInput, actorId: string): Promise
       },
     });
     await audit({ actorId, action: "content.created", targetType: "content", targetId: created.id, metadata: { source: "WRITTEN" } });
-    await linkAssets(created.id, [...imageSources(contentHtml), ...(coverImage ? [coverImage] : [])]);
+    await linkAssets(created.id, [...mediaSources(contentHtml), ...(coverImage ? [coverImage] : [])]);
     return toSaved(created);
   }
 
@@ -107,7 +107,7 @@ export async function saveEntry(input: SaveEntryInput, actorId: string): Promise
       tags: { set: [], connectOrCreate: tagConnect(input.tags) },
     },
   });
-  await linkAssets(updated.id, [...imageSources(contentHtml), ...(coverImage ? [coverImage] : [])]);
+  await linkAssets(updated.id, [...mediaSources(contentHtml), ...(coverImage ? [coverImage] : [])]);
   // Autosave runs every few seconds — deliberately not audited per save.
   return toSaved(updated);
 }

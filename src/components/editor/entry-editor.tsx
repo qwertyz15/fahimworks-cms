@@ -18,8 +18,9 @@ import { useRunAction } from "@/components/use-action-toast";
 import { cn } from "@/lib/utils";
 import { notebookExtensions } from "./extensions";
 import { SelectionToolbar, TableToolbar } from "./toolbars";
-import { PICK_IMAGE_EVENT } from "./slash-menu";
-import { ACCEPTED_IMAGE_TYPES, uploadImage } from "./upload";
+import { PICK_FILE_EVENT, PICK_IMAGE_EVENT, PICK_VIDEO_EVENT } from "./slash-menu";
+import { ACCEPTED_IMAGE_TYPES, ACCEPTED_TYPES, FILE_ACCEPT, fileType, kindOf, uploadFile, uploadImage, type UploadKind } from "./upload";
+import { parseVideoUrl } from "./rich-nodes";
 
 export interface EditableEntry {
   id: string;
@@ -48,15 +49,28 @@ const timeFmt = new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digi
  * (that would split the sentence) — before the block when at its start,
  * otherwise right after it.
  */
-function blockBoundary(doc: import("@tiptap/pm/model").Node, pos: number): number {
+function blockBoundary(doc: import("@tiptap/pm/model").Node, pos: number): number | { from: number; to: number } {
   const $pos = doc.resolve(Math.max(0, Math.min(pos, doc.content.size)));
   if (!$pos.parent.isTextblock || $pos.depth === 0) return $pos.pos;
-  return $pos.parentOffset === 0 && $pos.parent.content.size > 0 ? $pos.before() : $pos.after();
+  // An empty line is replaced by the block (no blank gaps left behind).
+  if ($pos.parent.content.size === 0) return { from: $pos.before(), to: $pos.after() };
+  return $pos.parentOffset === 0 ? $pos.before() : $pos.after();
+}
+
+/**
+ * Insert a media block and put the caret on a fresh line below it. Without
+ * this the new block stays selected, and the next keystroke would replace it.
+ */
+function insertBlock(editor: import("@tiptap/core").Editor, at: number | { from: number; to: number }, node: Record<string, unknown>) {
+  editor.chain().focus().insertContentAt(at, [node, { type: "paragraph" }]).run();
 }
 
 export interface EditorUploadConfig {
   enabled: boolean;
+  /** Images. */
   maxBytes: number;
+  /** Videos and file attachments. */
+  maxMediaBytes: number;
 }
 
 export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: EditableEntry | null; articleBaseUrl: string; uploads: EditorUploadConfig }) {
@@ -72,9 +86,14 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
   const [coverImage, setCoverImage] = useState<string | null>(entry?.coverImage ?? null);
   const [uploading, setUploading] = useState<{ count: number; pct: number } | null>(null);
   const bodyPicker = useRef<HTMLInputElement>(null);
+  const videoPicker = useRef<HTMLInputElement>(null);
+  const filePicker = useRef<HTMLInputElement>(null);
+  const [videoDialog, setVideoDialog] = useState(false);
+  const [videoUrl, setVideoUrl] = useState("");
   const coverPicker = useRef<HTMLInputElement>(null);
   // Set below once the editor exists; used by paste/drop handlers created at init.
   const insertImagesRef = useRef<(files: File[], pos?: number) => void>(() => {});
+  const insertVideoRef = useRef<(v: { provider: "youtube" | "vimeo"; id: string }) => void>(() => {});
 
   const [dirty, setDirty] = useState(false);
   const [tick, setTick] = useState(0);
@@ -108,15 +127,25 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
       attributes: { class: "notebook-editor prose-content", "aria-label": "Entry body" },
       // Paste or drop image files → upload to storage, then insert.
       handlePaste: (_view, event) => {
-        const files = [...(event.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
-        if (!files.length) return false;
-        event.preventDefault();
-        insertImagesRef.current(files);
-        return true;
+        const files = [...(event.clipboardData?.files ?? [])];
+        if (files.length) {
+          event.preventDefault();
+          insertImagesRef.current(files);
+          return true;
+        }
+        // A lone YouTube / Vimeo link becomes an embedded video.
+        const text = event.clipboardData?.getData("text/plain")?.trim() ?? "";
+        const video = !/\s/.test(text) ? parseVideoUrl(text) : null;
+        if (video) {
+          event.preventDefault();
+          insertVideoRef.current(video);
+          return true;
+        }
+        return false;
       },
       handleDrop: (view, event, _slice, moved) => {
         if (moved) return false;
-        const files = [...(event.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+        const files = [...(event.dataTransfer?.files ?? [])];
         if (!files.length) return false;
         event.preventDefault();
         insertImagesRef.current(files, view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos);
@@ -224,23 +253,39 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
     }
   }, [editor, buildPayload, applySaved, articleBaseUrl]);
 
-  /** Upload images one by one and insert each at `pos` (or the cursor). */
+  /**
+   * Upload files one by one (images, videos, attachments — detected by type)
+   * and insert each as the matching block at `pos` (or the cursor).
+   */
   const insertImages = useCallback(
-    async (files: File[], pos?: number) => {
+    async (files: File[], pos?: number, forceKind?: UploadKind) => {
       if (!editor) return;
       if (!uploads.enabled) {
-        toast.error("Image uploads aren't set up yet — add the S3_* variables in Vercel.");
+        toast.error("Uploads aren't set up yet — add the S3_* variables in Vercel.");
         return;
       }
       let at = blockBoundary(editor.state.doc, pos ?? editor.state.selection.from);
       for (const [i, file] of files.entries()) {
+        const kind = forceKind ?? kindOf(file);
+        if (!kind) {
+          toast.error(`“${file.name}” can't be added. Images: PNG/JPEG/WebP/GIF/AVIF · Videos: MP4/WebM · Files: PDF, ZIP, Office, CSV, TXT, MD, JSON.`);
+          continue;
+        }
         setUploading({ count: files.length - i, pct: 0 });
         try {
-          const url = await uploadImage(file, { contentId: values.current.id, maxBytes: uploads.maxBytes, onProgress: (pct) => setUploading({ count: files.length - i, pct }) });
-          const alt = file.name.replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " ").trim() || null;
-          const node = { type: "image", attrs: { src: url, alt } };
-          editor.chain().focus().insertContentAt(at, node).run();
-          // Next image goes right after this one.
+          const url = await uploadFile(file, kind, {
+            contentId: values.current.id,
+            maxBytes: kind === "image" ? uploads.maxBytes : uploads.maxMediaBytes,
+            onProgress: (pct) => setUploading({ count: files.length - i, pct }),
+          });
+          const node =
+            kind === "image"
+              ? { type: "image", attrs: { src: url, alt: file.name.replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " ").trim() || null } }
+              : kind === "video"
+                ? { type: "videoFile", attrs: { src: url } }
+                : { type: "attachment", attrs: { href: url, name: file.name, size: file.size, mime: fileType(file) } };
+          insertBlock(editor, at, node);
+          // Next one goes right after this one.
           at = blockBoundary(editor.state.doc, editor.state.selection.to);
         } catch (err) {
           toast.error(err instanceof Error ? err.message : "Upload failed.");
@@ -248,17 +293,37 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
       }
       setUploading(null);
     },
-    [editor, uploads.enabled, uploads.maxBytes],
+    [editor, uploads.enabled, uploads.maxBytes, uploads.maxMediaBytes],
+  );
+
+  const insertVideo = useCallback(
+    (v: { provider: "youtube" | "vimeo"; id: string }) => {
+      if (!editor) return;
+      insertBlock(editor, blockBoundary(editor.state.doc, editor.state.selection.from), { type: "videoEmbed", attrs: v });
+    },
+    [editor],
   );
   useLayoutEffect(() => {
     insertImagesRef.current = (files, pos) => void insertImages(files, pos);
+    insertVideoRef.current = insertVideo;
   });
 
-  // "/image" asks for the file picker.
+  // "/image", "/video" and "/file" open the matching picker / dialog.
   useEffect(() => {
-    const open = () => bodyPicker.current?.click();
-    window.addEventListener(PICK_IMAGE_EVENT, open);
-    return () => window.removeEventListener(PICK_IMAGE_EVENT, open);
+    const image = () => bodyPicker.current?.click();
+    const file = () => filePicker.current?.click();
+    const video = () => {
+      setVideoUrl("");
+      setVideoDialog(true);
+    };
+    window.addEventListener(PICK_IMAGE_EVENT, image);
+    window.addEventListener(PICK_FILE_EVENT, file);
+    window.addEventListener(PICK_VIDEO_EVENT, video);
+    return () => {
+      window.removeEventListener(PICK_IMAGE_EVENT, image);
+      window.removeEventListener(PICK_FILE_EVENT, file);
+      window.removeEventListener(PICK_VIDEO_EVENT, video);
+    };
   }, []);
 
   const uploadCover = async (file: File) => {
@@ -454,7 +519,19 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
             onChange={(e) => {
               const files = [...(e.target.files ?? [])];
               e.target.value = "";
-              if (files.length) void insertImages(files);
+              if (files.length) void insertImages(files, undefined, "image");
+            }}
+          />
+          <input
+            ref={filePicker}
+            type="file"
+            accept={FILE_ACCEPT}
+            multiple
+            hidden
+            onChange={(e) => {
+              const files = [...(e.target.files ?? [])];
+              e.target.value = "";
+              if (files.length) void insertImages(files, undefined, "file");
             }}
           />
           <input
@@ -538,6 +615,49 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
           )}
         </aside>
       </div>
+
+      <Dialog
+        open={videoDialog}
+        onClose={() => setVideoDialog(false)}
+        title="Add a video"
+        description="Paste a YouTube or Vimeo link, or upload an MP4 / WebM file."
+        footer={
+          <>
+            <Button variant="outline" size="sm" onClick={() => videoPicker.current?.click()} disabled={!uploads.enabled} title={uploads.enabled ? undefined : "Uploads aren't configured"}>
+              Upload a file…
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                const v = parseVideoUrl(videoUrl);
+                if (!v) {
+                  toast.error("That doesn't look like a YouTube or Vimeo link.");
+                  return;
+                }
+                setVideoDialog(false);
+                insertVideo(v);
+              }}
+            >
+              Embed link
+            </Button>
+          </>
+        }
+      >
+        <Input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="https://www.youtube.com/watch?v=…" aria-label="Video link" autoFocus />
+        {/* Must live inside the modal: everything outside an open <dialog> is inert, so a picker there can't be opened. */}
+        <input
+          ref={videoPicker}
+          type="file"
+          accept={ACCEPTED_TYPES.video.join(",")}
+          hidden
+          onChange={(e) => {
+            const files = [...(e.target.files ?? [])];
+            e.target.value = "";
+            setVideoDialog(false);
+            if (files.length) void insertImages(files, undefined, "video");
+          }}
+        />
+      </Dialog>
 
       <Dialog
         open={confirmDelete}

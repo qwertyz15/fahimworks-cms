@@ -25,6 +25,8 @@ const schema = z.object({
   S3_SECRET_ACCESS_KEY: z.string().optional().default(""),
   S3_PUBLIC_URL: z.string().optional().default(""),
   UPLOAD_MAX_BYTES: z.coerce.number().int().min(100 * 1024).max(50 * 1024 * 1024).default(10 * 1024 * 1024),
+  /** Videos and file attachments. */
+  UPLOAD_MAX_MEDIA_BYTES: z.coerce.number().int().min(1024 * 1024).max(500 * 1024 * 1024).default(100 * 1024 * 1024),
 });
 
 export type Env = z.infer<typeof schema>;
