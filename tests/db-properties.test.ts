@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PropertyValueError, convertValue, optionsFromTexts, safeUrl, validateConfig, validateValue, type PropertyDef } from "@/lib/db-properties";
-import { compileFilter, compileSorts } from "@/server/databases/query";
+import { compileFilter, compileSorts, compileUndated, compileWindow } from "@/server/databases/query";
 
 const def = (type: PropertyDef["type"], config: PropertyDef["config"] = {}): PropertyDef => ({ id: "p1", name: "Prop", type, config });
 const opts = { options: [{ id: "a", name: "Alpha", color: "blue" as const }, { id: "b", name: "Beta", color: "red" as const }] };
@@ -96,5 +96,20 @@ describe("filter compiler", () => {
   });
   it("sorts end with a byte-wise position tiebreak", () => {
     expect(compileSorts([{ propertyId: "n1", direction: "desc" }], ctx).sql).toMatch(/DESC NULLS LAST, p\."position" COLLATE "C" ASC, p\."id" ASC$/);
+  });
+});
+
+describe("date window compiler", () => {
+  const props = new Map([["d1", { id: "d1", name: "Due", type: "DATE" as const, config: {} }], ["t1", { id: "t1", name: "Note", type: "TEXT" as const, config: {} }]]);
+  const ctx = { props, today: "2026-09-29" };
+  it("binds the range as parameters and tests overlap", () => {
+    const q = compileWindow({ propertyId: "d1", from: "2026-09-01", to: "2026-09-30" }, ctx)!;
+    expect(q.sql).toMatch(/<= (\?|\$\d+) AND COALESCE/);
+    expect(q.values).toEqual(expect.arrayContaining(["2026-09-01", "2026-09-30"]));
+  });
+  it("ignores non-date properties", () => {
+    expect(compileWindow({ propertyId: "t1", from: "2026-09-01", to: "2026-09-30" }, ctx)).toBeNull();
+    expect(compileUndated("t1", ctx)).toBeNull();
+    expect(compileUndated("d1", ctx)!.sql).toMatch(/IS NULL/);
   });
 });

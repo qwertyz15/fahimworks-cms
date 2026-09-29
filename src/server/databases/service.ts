@@ -18,10 +18,10 @@ import {
   type PropertyType,
   type PropertyValue,
 } from "@/lib/db-properties";
-import { filterWithinLimits, type FilterGroup, type SortRule, type ViewConfig, type ViewType } from "@/lib/db-views";
+import { filterWithinLimits, type DateWindow, type FilterGroup, type SortRule, type ViewConfig, type ViewType } from "@/lib/db-views";
 import { deriveFields, mediaSources, renderNotebookHtml } from "@/server/services/notebook-html";
 import { storagePublicOrigin } from "@/lib/storage";
-import { compileFilter, compileSearch, compileSorts, type CompileContext } from "./query";
+import { compileFilter, compileSearch, compileSorts, compileUndated, compileWindow, type CompileContext } from "./query";
 
 /**
  * Workspace databases: every database row is a Page (Page.databaseId), with
@@ -235,6 +235,7 @@ export async function duplicateDatabase(userId: string, id: string, withRows: bo
           title: pg.title,
           icon: pg.icon,
           coverImage: pg.coverImage,
+          thumbnail: pg.thumbnail,
           body: pg.body ?? Prisma.JsonNull,
           contentHtml: pg.contentHtml,
           contentText: pg.contentText,
@@ -373,10 +374,17 @@ export async function createView(userId: string, databaseId: string, input: { na
   const position = generateKeyBetween(await lastPosition("view", { databaseId }), null);
   const names: Record<string, string> = { TABLE: "Table", BOARD: "Board", LIST: "List", CALENDAR: "Calendar", TIMELINE: "Timeline", GALLERY: "Gallery" };
   let config = input.config ?? {};
+  const props = await propertiesOf(databaseId);
   if (input.type === "BOARD" && !config.groupBy) {
-    const props = await propertiesOf(databaseId);
     config = { ...config, groupBy: (props.find((p) => p.type === "STATUS") ?? props.find((p) => p.type === "SELECT"))?.id ?? null };
   }
+  if ((input.type === "CALENDAR" || input.type === "TIMELINE") && !config.dateBy) {
+    // Prefer a date range for timelines, any Date otherwise, then Created time.
+    const dates = props.filter((p) => p.type === "DATE");
+    const pick = (input.type === "TIMELINE" ? dates.find((d) => d.config.range) : undefined) ?? dates[0] ?? props.find((p) => p.type === "CREATED_TIME");
+    config = { ...config, dateBy: pick?.id ?? null };
+  }
+  if (input.type === "GALLERY" && config.cover === undefined) config = { ...config, cover: "page" };
   const v = await db.databaseView.create({ data: { databaseId, name: (input.name?.trim() || names[input.type]!).slice(0, 100), type: input.type as DbViewType, position, config: config as Prisma.InputJsonValue } });
   return { id: v.id, name: v.name, type: v.type as ViewType, config: (v.config ?? {}) as ViewConfig };
 }
@@ -407,6 +415,8 @@ export interface RowData {
   id: string;
   title: string;
   icon: string | null;
+  /** Card cover (page cover or first image). */
+  thumbnail: string | null;
   values: Record<string, PropertyValue>;
   position: string;
   createdAt: string;
@@ -419,31 +429,46 @@ export const ROW_PAGE_SIZE = 500;
 export async function queryRows(
   userId: string,
   databaseId: string,
-  opts: { filter?: FilterGroup | null; sorts?: SortRule[]; search?: string; today: string; offset?: number; limit?: number; archived?: boolean },
+  opts: {
+    filter?: FilterGroup | null;
+    sorts?: SortRule[];
+    search?: string;
+    today: string;
+    offset?: number;
+    limit?: number;
+    archived?: boolean;
+    /** Only rows overlapping this date range (calendar / timeline). */
+    window?: DateWindow | null;
+    /** Only rows without a value for this date property ("No date" tray). */
+    undatedBy?: string | null;
+  },
 ): Promise<{ rows: RowData[]; total: number }> {
   await requireDatabase(userId, databaseId, "VIEWER");
   if (!filterWithinLimits(opts.filter)) throw new DatabaseError("That filter is too large.");
   const props = await propertiesOf(databaseId);
   const ctx: CompileContext = { props: new Map(props.map((p) => [p.id, p])), today: /^\d{4}-\d{2}-\d{2}$/.test(opts.today) ? opts.today : new Date().toISOString().slice(0, 10) };
-  const where = Prisma.sql`p."database_id" = ${databaseId} AND p."archived_at" IS ${opts.archived ? Prisma.sql`NOT NULL` : Prisma.sql`NULL`} AND ${compileFilter(opts.filter, ctx)} ${compileSearch(opts.search)}`;
+  const windowSql = opts.window ? compileWindow(opts.window, ctx) : null;
+  const undatedSql = opts.undatedBy ? compileUndated(opts.undatedBy, ctx) : null;
+  const extra = [windowSql, undatedSql].filter((x): x is Prisma.Sql => x !== null);
+  const where = Prisma.sql`p."database_id" = ${databaseId} AND p."archived_at" IS ${opts.archived ? Prisma.sql`NOT NULL` : Prisma.sql`NULL`} AND ${compileFilter(opts.filter, ctx)} ${compileSearch(opts.search)} ${extra.length ? Prisma.sql`AND ${Prisma.join(extra, " AND ")}` : Prisma.empty}`;
   const limit = Math.min(Math.max(opts.limit ?? ROW_PAGE_SIZE, 1), ROW_PAGE_SIZE);
   const offset = Math.max(opts.offset ?? 0, 0);
   const [rows, count] = await Promise.all([
-    db.$queryRaw<{ id: string; title: string; icon: string | null; values: Record<string, PropertyValue>; position: string; created_at: Date; updated_at: Date }[]>`
-      SELECT p."id", p."title", p."icon", p."values", p."position", p."created_at", p."updated_at"
+    db.$queryRaw<{ id: string; title: string; icon: string | null; thumbnail: string | null; values: Record<string, PropertyValue>; position: string; created_at: Date; updated_at: Date }[]>`
+      SELECT p."id", p."title", p."icon", p."thumbnail", p."values", p."position", p."created_at", p."updated_at"
       FROM "pages" p WHERE ${where}
       ORDER BY ${compileSorts(opts.sorts, ctx)}
       LIMIT ${limit} OFFSET ${offset}`,
     db.$queryRaw<{ n: bigint }[]>`SELECT count(*) AS n FROM "pages" p WHERE ${where}`,
   ]);
   return {
-    rows: rows.map((r) => ({ id: r.id, title: r.title, icon: r.icon, values: r.values ?? {}, position: r.position, createdAt: r.created_at.toISOString(), updatedAt: r.updated_at.toISOString() })),
+    rows: rows.map((r) => ({ id: r.id, title: r.title, icon: r.icon, thumbnail: r.thumbnail, values: r.values ?? {}, position: r.position, createdAt: r.created_at.toISOString(), updatedAt: r.updated_at.toISOString() })),
     total: Number(count[0]?.n ?? 0),
   };
 }
 
-function toRow(p: { id: string; title: string; icon: string | null; values: Prisma.JsonValue; position: string; createdAt: Date; updatedAt: Date }): RowData {
-  return { id: p.id, title: p.title, icon: p.icon, values: (p.values ?? {}) as Record<string, PropertyValue>, position: p.position, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() };
+function toRow(p: { id: string; title: string; icon: string | null; thumbnail?: string | null; values: Prisma.JsonValue; position: string; createdAt: Date; updatedAt: Date }): RowData {
+  return { id: p.id, title: p.title, icon: p.icon, thumbnail: p.thumbnail ?? null, values: (p.values ?? {}) as Record<string, PropertyValue>, position: p.position, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() };
 }
 
 /** New row (defaults applied), placed after `afterId` or at the end. */
@@ -537,6 +562,7 @@ export async function duplicateRow(userId: string, pageId: string) {
       title: page.title ? `${page.title} (copy)`.slice(0, LIMITS.title) : "",
       icon: page.icon,
       coverImage: page.coverImage,
+      thumbnail: page.thumbnail,
       body: page.body ?? Prisma.JsonNull,
       contentHtml: page.contentHtml,
       contentText: page.contentText,
@@ -574,6 +600,7 @@ export async function savePageBody(userId: string, pageId: string, input: { body
       contentText: derived.contentText,
       searchText: buildSearchText(page.title, values, defs, derived.contentText),
       ...(input.coverImage !== undefined ? { coverImage: input.coverImage || null } : {}),
+      thumbnail: (input.coverImage !== undefined ? input.coverImage : page.coverImage) || derived.firstImage || null,
       lastEditedById: userId,
     },
   });

@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowDownUp, ArrowLeft, Archive, ArchiveRestore, Copy, Filter, ImagePlus, Kanban, List, MoreHorizontal, Plus, Search, Settings2, Table2, Trash2, X, type LucideIcon } from "lucide-react";
+import { ArrowDownUp, ArrowLeft, Archive, ArchiveRestore, CalendarDays, Copy, Filter, GanttChart, ImagePlus, Kanban, LayoutGrid, LayoutTemplate, List, MoreHorizontal, Plus, Search, Settings2, Table2, Trash2, X, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { localToday } from "@/lib/dates";
 import { COMPUTED_TYPES, type PropertyConfig, type PropertyType, type PropertyValue } from "@/lib/db-properties";
-import { ENABLED_VIEW_TYPES, type FilterGroup, type SortRule, type ViewConfig, type ViewType } from "@/lib/db-views";
+import { ENABLED_VIEW_TYPES, type DateWindow, type FilterGroup, type SortRule, type ViewConfig, type ViewType } from "@/lib/db-views";
 import {
   addPropertyAction,
   archiveDatabaseAction,
@@ -41,11 +41,16 @@ import { ValueEditor } from "./cells";
 import { TableView } from "./table-view";
 import { BoardView } from "./board-view";
 import { ListView } from "./list-view";
+import { GalleryView } from "./gallery-view";
+import { CalendarView } from "./calendar-view";
+import { TimelineView } from "./timeline-view";
+import { LayoutMenu } from "./layout-menu";
+import { PeekPanel } from "./peek-panel";
 import { EmojiPicker } from "./emoji-picker";
 import type { DbMeta, Person, PropertyDef, Row, ViewDef } from "./types";
 import type { ViewProps } from "./view-props";
 
-export const VIEW_ICONS: Record<ViewType, LucideIcon> = { TABLE: Table2, BOARD: Kanban, LIST: List, CALENDAR: Table2, TIMELINE: Table2, GALLERY: Table2 };
+export const VIEW_ICONS: Record<ViewType, LucideIcon> = { TABLE: Table2, BOARD: Kanban, LIST: List, CALENDAR: CalendarDays, TIMELINE: GanttChart, GALLERY: LayoutGrid };
 const VIEW_LABELS: Record<ViewType, string> = { TABLE: "Table", BOARD: "Board", LIST: "List", CALENDAR: "Calendar", TIMELINE: "Timeline", GALLERY: "Gallery" };
 
 
@@ -61,7 +66,19 @@ async function act<T>(p: Promise<{ ok: true; data?: T; message?: string } | { ok
   return { data: r.data as T };
 }
 
-export function DatabaseScreen(init: { database: DbMeta; properties: PropertyDef[]; views: ViewDef[]; people: Person[]; rows: Row[]; total: number; activeViewId: string; uploads: EditorUploadConfig }) {
+export function DatabaseScreen(init: {
+  database: DbMeta;
+  properties: PropertyDef[];
+  views: ViewDef[];
+  people: Person[];
+  rows: Row[];
+  total: number;
+  activeViewId: string;
+  uploads: EditorUploadConfig;
+  articleBaseUrl: string;
+  /** Row open in the peek panel (?p=). */
+  peekId?: string | null;
+}) {
   const router = useRouter();
   const dbId = init.database.id;
   const [meta, setMeta] = useState(init.database);
@@ -80,13 +97,17 @@ export function DatabaseScreen(init: { database: DbMeta; properties: PropertyDef
   const [autoEdit, setAutoEdit] = useState<string | null>(null);
   const view = views.find((v) => v.id === activeId) ?? views[0]!;
   const req = useRef(0);
+  /** Calendar / timeline date window (reported by those views). */
+  const windowRef = useRef<DateWindow | null>(null);
+  const [peekId, setPeekId] = useState<string | null>(init.peekId ?? null);
+  const today = useMemo(() => localToday(), []);
 
   // ── Rows ────────────────────────────────────────────────────────────────
   const query = useCallback(
     async (v: ViewDef, q: string, offset = 0) => {
       const n = ++req.current;
       setLoading(true);
-      const res = await queryRowsAction({ databaseId: dbId, filter: v.config.filter ?? null, sorts: v.config.sorts ?? [], search: q, today: localToday(), offset });
+      const res = await queryRowsAction({ databaseId: dbId, filter: v.config.filter ?? null, sorts: v.config.sorts ?? [], search: q, today: localToday(), offset, window: windowRef.current });
       if (n !== req.current) return;
       setLoading(false);
       if (!res.ok || !res.data) return void toast.error(res.ok ? "Could not load rows." : res.error);
@@ -111,7 +132,12 @@ export function DatabaseScreen(init: { database: DbMeta; properties: PropertyDef
 
   const updateRow: ViewProps["onUpdateRow"] = async (id, patch) => {
     const before = rows.find((r) => r.id === id);
-    if (!before) return;
+    if (!before) {
+      // A row not in the list (e.g. from a "No date" tray): save, then show it.
+      const res = await act(updateRowAction({ id, ...patch }));
+      if (res?.data) setRows((cur) => [...cur.filter((r) => r.id !== id), res.data]);
+      return;
+    }
     const optimistic = { ...before, ...(patch.title !== undefined ? { title: patch.title } : {}), values: { ...before.values } };
     for (const [k, v] of Object.entries(patch.values ?? {})) {
       if (v === null) delete optimistic.values[k];
@@ -154,7 +180,42 @@ export function DatabaseScreen(init: { database: DbMeta; properties: PropertyDef
     });
   };
 
-  const openRow = (id: string) => router.push(`/dashboard/pages/${id}`);
+  const urlFor = (viewId: string, peek: string | null) => `/dashboard/databases/${dbId}?view=${viewId}${peek ? `&p=${peek}` : ""}`;
+  const openRow = (id: string) => {
+    if (view.config.openIn === "page") return router.push(`/dashboard/pages/${id}`);
+    setPeekId(id);
+    window.history.replaceState(null, "", urlFor(view.id, id));
+  };
+  const closePeek = useCallback(() => {
+    setPeekId(null);
+    window.history.replaceState(null, "", urlFor(activeId, null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- urlFor only uses dbId
+  }, [activeId, dbId]);
+  const onPeekRowChange = useCallback((row: Row) => setRows((cur) => cur.map((r) => (r.id === row.id ? { ...row, position: r.position } : r))), []);
+
+  // Calendar / timeline report their visible range; reload when it changes.
+  const viewRef = useRef(view);
+  const searchRef = useRef(search);
+  useEffect(() => {
+    viewRef.current = view;
+    searchRef.current = search;
+  });
+  const onWindowChange = useCallback(
+    (w: DateWindow | null) => {
+      const same = JSON.stringify(w) === JSON.stringify(windowRef.current);
+      windowRef.current = w;
+      if (!same && w) void query(viewRef.current, searchRef.current);
+    },
+    [query],
+  );
+  const queryUndated = useCallback(
+    async (propertyId: string) => {
+      const v = viewRef.current;
+      const res = await queryRowsAction({ databaseId: dbId, filter: v.config.filter ?? null, sorts: v.config.sorts ?? [], search: searchRef.current, today: localToday(), undatedBy: propertyId });
+      return res.ok && res.data ? res.data.rows : [];
+    },
+    [dbId],
+  );
 
   // ── Views ───────────────────────────────────────────────────────────────
   // View settings save shortly after the last change; anything still pending is
@@ -190,8 +251,10 @@ export function DatabaseScreen(init: { database: DbMeta; properties: PropertyDef
     if (!v || id === activeId) return;
     setActiveId(id);
     setSelection(new Set());
-    window.history.replaceState(null, "", `/dashboard/databases/${dbId}?view=${id}`);
-    void query(v, search);
+    windowRef.current = null;
+    window.history.replaceState(null, "", urlFor(id, null));
+    setPeekId(null);
+    if (v.type !== "CALENDAR" && v.type !== "TIMELINE") void query(v, search);
   };
 
   const addView = async (type: ViewType) => {
@@ -199,8 +262,9 @@ export function DatabaseScreen(init: { database: DbMeta; properties: PropertyDef
     if (!v) return;
     setViews((cur) => [...cur, v]);
     setActiveId(v.id);
-    window.history.replaceState(null, "", `/dashboard/databases/${dbId}?view=${v.id}`);
-    void query(v, search);
+    windowRef.current = null;
+    window.history.replaceState(null, "", urlFor(v.id, null));
+    if (v.type !== "CALENDAR" && v.type !== "TIMELINE") void query(v, search);
   };
 
   const removeView = async (id: string) => {
@@ -342,6 +406,9 @@ export function DatabaseScreen(init: { database: DbMeta; properties: PropertyDef
     loading,
     canReorder: !view.config.sorts?.length,
     autoEditRowId: autoEdit,
+    onWindowChange,
+    queryUndated,
+    today,
   };
 
   const filterCount = countRules(view.config.filter);
@@ -468,6 +535,11 @@ export function DatabaseScreen(init: { database: DbMeta; properties: PropertyDef
             )}>
               <ArrowDownUp className="size-3.5" /> Sort{sortCount ? ` · ${sortCount}` : ""}
             </PopoverButton>
+            <PopoverButton label="Layout" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[13px] whitespace-nowrap text-muted-foreground hover:bg-muted" placement="bottom-end" content={() => (
+              <LayoutMenu view={view} props={ordered} onChange={(patch) => updateView(patch)} />
+            )}>
+              <LayoutTemplate className="size-3.5" /> Layout
+            </PopoverButton>
             <PopoverButton label="Properties" className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[13px] whitespace-nowrap text-muted-foreground hover:bg-muted" placement="bottom-end" content={() => (
               <PropertiesMenu
                 props={ordered}
@@ -514,8 +586,32 @@ export function DatabaseScreen(init: { database: DbMeta; properties: PropertyDef
       )}
 
       <div className="px-4 pb-10 sm:px-6 lg:px-8">
-        {view.type === "BOARD" ? <BoardView {...viewProps} /> : view.type === "LIST" ? <ListView {...viewProps} /> : <TableView {...viewProps} />}
+        {view.type === "BOARD" ? (
+          <BoardView {...viewProps} />
+        ) : view.type === "LIST" ? (
+          <ListView {...viewProps} />
+        ) : view.type === "GALLERY" ? (
+          <GalleryView {...viewProps} />
+        ) : view.type === "CALENDAR" ? (
+          <CalendarView key={view.id} {...viewProps} />
+        ) : view.type === "TIMELINE" ? (
+          <TimelineView key={view.id} {...viewProps} />
+        ) : (
+          <TableView {...viewProps} />
+        )}
       </div>
+
+      {peekId && (
+        <PeekPanel
+          key={peekId}
+          pageId={peekId}
+          uploads={init.uploads}
+          articleBaseUrl={init.articleBaseUrl}
+          onClose={closePeek}
+          onOpenFull={() => router.push(`/dashboard/pages/${peekId}`)}
+          onRowChange={onPeekRowChange}
+        />
+      )}
 
       {menu && (
         <Popover anchor={menu.anchor} open onClose={() => setMenu(null)} label={`${menu.def.name} property`}>

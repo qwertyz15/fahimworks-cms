@@ -5,6 +5,7 @@ import { localToday } from "@/lib/dates";
 import { mediaUploadLimitBytes, uploadLimitBytes, uploadsEnabled } from "@/lib/storage";
 import { requireAdmin } from "@/server/auth/guards";
 import { DatabaseError, getDatabase, queryRows } from "@/server/databases/service";
+import { writtenPostUrl } from "@/lib/timeline";
 
 export const metadata: Metadata = { title: "Database" };
 
@@ -33,6 +34,8 @@ export default async function DatabasePage({ params, searchParams }: PageProps<"
       rows={rows}
       total={total}
       activeViewId={view.id}
+      articleBaseUrl={writtenPostUrl("")}
+      peekId={typeof sp.p === "string" && /^[a-z0-9]{8,40}$/.test(sp.p) ? sp.p : null}
       uploads={{ enabled: uploadsEnabled(), maxBytes: uploadLimitBytes(), maxMediaBytes: mediaUploadLimitBytes() }}
     />
   );

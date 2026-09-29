@@ -418,6 +418,8 @@ model Page {
   title          String    @default("")
   icon           String?
   coverImage     String?   @map("cover_image")
+  /// Card cover: the page cover, else the first image in its content (set on save).
+  thumbnail      String?
   /// Tiptap document (same format as Notebook entries).
   body           Json?
   contentHtml    String?   @map("content_html")

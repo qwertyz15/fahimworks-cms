@@ -91,6 +91,11 @@ export async function createFromTemplate(userId: string, key: string, today: str
         ...(v.sorts ? { sorts: v.sorts.flatMap(([k, direction]) => (idOf(k) ? [{ propertyId: idOf(k)!, direction }] : [])) } : {}),
         ...(v.groupBy ? { groupBy: idOf(v.groupBy) ?? null } : {}),
         ...(v.hidden ? { hidden: v.hidden.map(idOf).filter(Boolean) as string[] } : {}),
+        ...(v.dateBy ? { dateBy: idOf(v.dateBy) ?? null } : {}),
+        ...(v.endBy ? { endBy: idOf(v.endBy) ?? null } : {}),
+        ...(v.scale ? { scale: v.scale } : {}),
+        ...(v.cover ? { cover: v.cover === "page" ? "page" : (idOf(v.cover) ?? null) } : {}),
+        ...(v.cardSize ? { cardSize: v.cardSize } : {}),
       };
       await tx.databaseView.create({ data: { databaseId: ctx.databaseId, name: v.name, type: v.type as DbViewType, position: viewKeys[i]!, config: config as Prisma.InputJsonValue } });
     }

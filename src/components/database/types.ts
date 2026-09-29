@@ -23,6 +23,7 @@ export interface Row {
   id: string;
   title: string;
   icon: string | null;
+  thumbnail: string | null;
   values: Record<string, PropertyValue>;
   position: string;
   createdAt: string;

@@ -102,7 +102,10 @@ export function useRichEditor(opts: {
       },
     },
     onCreate: ({ editor: e }) => setWords((e.storage as { characterCount?: { words: () => number } }).characterCount?.words() ?? 0),
-    onUpdate: ({ editor: e }) => {
+    onUpdate: ({ editor: e, transaction }) => {
+      // A transaction with no steps changed nothing itself; the doc changed only because
+      // a plugin normalised it (e.g. the trailing empty line). Not an edit.
+      if (transaction.steps.length === 0) return;
       setWords((e.storage as { characterCount?: { words: () => number } }).characterCount?.words() ?? 0);
       latest.current.onChange();
     },

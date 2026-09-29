@@ -1,5 +1,5 @@
 import type { PropertyValue, SelectOption } from "@/lib/db-properties";
-import type { ViewConfig } from "@/lib/db-views";
+import type { DateWindow, ViewConfig } from "@/lib/db-views";
 import type { EditorUploadConfig } from "@/components/editor/rich-editor";
 import type { Person, PropertyDef, Row, ViewDef } from "./types";
 
@@ -29,4 +29,10 @@ export interface ViewProps {
   canReorder: boolean;
   /** Table: start editing this row's title (a row just created from the toolbar). */
   autoEditRowId?: string | null;
+  /** Calendar / timeline: load only rows overlapping this date range (null = no window). */
+  onWindowChange: (w: DateWindow | null) => void;
+  /** Rows without a value for a date property (the "No date" tray), with the view's filter + search. */
+  queryUndated: (propertyId: string) => Promise<Row[]>;
+  /** Viewer's local date, YYYY-MM-DD. */
+  today: string;
 }

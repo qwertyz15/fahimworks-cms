@@ -1,12 +1,15 @@
 "use server";
 
+import { updateTag } from "next/cache";
 import { z } from "zod";
 import type { Prisma } from "@/generated/prisma/client";
 import { PROPERTY_TYPES, type PropertyDef } from "@/lib/db-properties";
-import { VIEW_TYPES, filterNodeSchema, viewConfigSchema, type FilterGroup, type ViewConfig } from "@/lib/db-views";
+import { VIEW_TYPES, dateWindowSchema, filterNodeSchema, viewConfigSchema, type FilterGroup, type ViewConfig } from "@/lib/db-views";
 import { NOTEBOOK_MAX_BYTES } from "@/lib/validation";
 import * as svc from "@/server/databases/service";
 import { createFromTemplate } from "@/server/databases/templates";
+import { deleteArticlesOf, publishPage, publishState, unpublishPage, updateLive, type PublishState } from "@/server/databases/publish";
+import { TIMELINE_TAG } from "@/server/queries/public";
 import { adminAction, type ActionResult } from "./result";
 
 /*
@@ -58,7 +61,11 @@ export async function archiveDatabaseAction(payload: unknown): Res<undefined> {
 
 export async function deleteDatabaseAction(payload: unknown): Res<undefined> {
   return adminAction(async (user) => {
-    await svc.deleteDatabase(user.id, z.object({ id }).parse(payload).id);
+    const dbId = z.object({ id }).parse(payload).id;
+    await svc.requireDatabase(user.id, dbId, "OWNER");
+    // Articles published from its pages go too.
+    if (await deleteArticlesOf(user.id, { databaseId: dbId })) updateTag(TIMELINE_TAG);
+    await svc.deleteDatabase(user.id, dbId);
     return { ok: true, message: "Database deleted." };
   });
 }
@@ -135,6 +142,8 @@ export async function queryRowsAction(payload: unknown): Res<{ rows: svc.RowData
         today,
         offset: z.number().int().min(0).max(1_000_000).optional(),
         archived: z.boolean().optional(),
+        window: dateWindowSchema.nullable().optional(),
+        undatedBy: id.nullable().optional(),
       })
       .parse(payload);
     const filter = input.filter && input.filter.kind === "group" ? (input.filter as FilterGroup) : null;
@@ -177,6 +186,8 @@ export async function archiveRowsAction(payload: unknown): Res<number> {
 export async function deleteRowsAction(payload: unknown): Res<number> {
   return adminAction(async (user) => {
     const input = z.object({ databaseId: id, ids }).parse(payload);
+    await svc.requireDatabase(user.id, input.databaseId);
+    if (await deleteArticlesOf(user.id, { databaseId: input.databaseId, id: { in: input.ids } })) updateTag(TIMELINE_TAG);
     return { ok: true, data: await svc.deleteRows(user.id, input.databaseId, input.ids) };
   });
 }
@@ -202,5 +213,56 @@ export async function savePageAction(payload: unknown): Res<{ id: string; update
     }
     if (!body || typeof body !== "object" || (body as { type?: string }).type !== "doc") return { ok: false, error: "Invalid page content." };
     return { ok: true, data: await svc.savePageBody(user.id, input.id, { body, html: input.html, coverImage: input.coverImage }) };
+  });
+}
+
+// ── Peek / publish ──
+export interface PageData {
+  page: { id: string; title: string; icon: string | null; coverImage: string | null; body: unknown; values: Record<string, unknown>; createdAt: string; updatedAt: string };
+  database: { id: string; title: string; icon: string | null } | null;
+  properties: PropertyDef[];
+  people: { id: string; name: string }[];
+  publish: PublishState | null;
+}
+
+/** Everything the peek panel needs to show and edit a row page. */
+export async function getPageAction(payload: unknown): Res<PageData> {
+  return adminAction(async (user) => {
+    const { page, database } = await svc.getPage(user.id, z.object({ id }).parse(payload).id);
+    return {
+      ok: true,
+      data: {
+        page: { id: page.id, title: page.title, icon: page.icon, coverImage: page.coverImage, body: page.body ?? null, values: (page.values ?? {}) as Record<string, unknown>, createdAt: page.createdAt.toISOString(), updatedAt: page.updatedAt.toISOString() },
+        database: database ? { id: database.database.id, title: database.database.title, icon: database.database.icon } : null,
+        properties: database?.properties ?? [],
+        people: database?.people ?? [],
+        publish: await publishState(page.id),
+      },
+    };
+  });
+}
+
+export async function publishPageAction(payload: unknown): Res<PublishState | null> {
+  return adminAction(async (user) => {
+    const input = z.object({ id, slug: z.string().max(80).nullable().optional(), tagsFrom: id.nullable().optional() }).parse(payload);
+    const state = await publishPage(user.id, input.id, input);
+    updateTag(TIMELINE_TAG);
+    return { ok: true, data: state, message: "Published to your timeline." };
+  });
+}
+
+export async function updateLiveAction(payload: unknown): Res<PublishState | null> {
+  return adminAction(async (user) => {
+    const state = await updateLive(user.id, z.object({ id }).parse(payload).id);
+    updateTag(TIMELINE_TAG);
+    return { ok: true, data: state, message: "The live article is up to date." };
+  });
+}
+
+export async function unpublishPageAction(payload: unknown): Res<PublishState | null> {
+  return adminAction(async (user) => {
+    const state = await unpublishPage(user.id, z.object({ id }).parse(payload).id);
+    updateTag(TIMELINE_TAG);
+    return { ok: true, data: state, message: "Removed from your timeline (kept as a draft)." };
   });
 }

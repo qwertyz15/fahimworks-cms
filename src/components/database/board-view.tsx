@@ -18,7 +18,8 @@ import { CSS } from "@dnd-kit/utilities";
 import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { STATUS_GROUPS, type SelectOption } from "@/lib/db-properties";
-import { OptionChip, ValueDisplay } from "./cells";
+import { OptionChip } from "./cells";
+import { RowCard } from "./card";
 import type { PropertyDef, Row } from "./types";
 import type { ViewProps } from "./view-props";
 
@@ -127,7 +128,7 @@ function Board(p: ViewProps & { group: PropertyDef }) {
             const option = options.find((o) => o.id === k);
             const ids = columns[k] ?? EMPTY;
             return (
-              <Column key={k} id={k} label={option ? <OptionChip option={option} /> : <span className="text-xs font-medium text-muted-foreground">No {group.name}</span>} count={ids.length}>
+              <Column key={k} id={k} width={p.view.config.cardSize === "large" ? "w-80" : p.view.config.cardSize === "small" ? "w-52" : "w-64"} label={option ? <OptionChip option={option} /> : <span className="text-xs font-medium text-muted-foreground">No {group.name}</span>} count={ids.length}>
                 <SortableContext items={ids} strategy={verticalListSortingStrategy}>
                   {ids.map((rid) => {
                     const row = byId.get(rid);
@@ -146,17 +147,17 @@ function Board(p: ViewProps & { group: PropertyDef }) {
             );
           })}
         </div>
-        <DragOverlay>{active ? <CardBody row={active} props={cardProps} p={p} className="rotate-1 shadow-pop" /> : null}</DragOverlay>
+        <DragOverlay>{active ? <RowCard row={active} props={cardProps} people={p.people} config={p.view.config} className="rotate-1 shadow-pop" /> : null}</DragOverlay>
       </DndContext>
       {!p.canReorder && <p className="text-xs text-muted-foreground">This view is sorted, so cards keep their sorted order within a column. Remove the sort to arrange cards by hand.</p>}
     </div>
   );
 }
 
-function Column({ id, label, count, children }: { id: string; label: React.ReactNode; count: number; children: React.ReactNode }) {
+function Column({ id, label, count, children, width }: { id: string; label: React.ReactNode; count: number; children: React.ReactNode; width: string }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
-    <section ref={setNodeRef} className={cn("flex w-64 shrink-0 flex-col gap-2 rounded-xl border bg-surface-2 p-2", isOver && "ring-2 ring-primary/40")} aria-label={`Column ${typeof label === "string" ? label : id}`} data-testid="board-column" data-column={id}>
+    <section ref={setNodeRef} className={cn("flex shrink-0 flex-col gap-2 rounded-xl border bg-surface-2 p-2", width, isOver && "ring-2 ring-primary/40")} aria-label={`Column ${typeof label === "string" ? label : id}`} data-testid="board-column" data-column={id}>
       <header className="flex items-center gap-2 px-1">
         {label}
         <span className="text-xs text-muted-foreground tabular-nums">{count}</span>
@@ -170,33 +171,7 @@ function Card({ row, props, p }: { row: Row; props: PropertyDef[]; p: ViewProps 
   const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id: row.id, animateLayoutChanges: noLayoutAnimation });
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} {...attributes} {...listeners} className={cn(isDragging && "opacity-40")}>
-      <CardBody row={row} props={props} p={p} onOpen={() => p.onOpenRow(row.id)} />
-    </div>
-  );
-}
-
-function CardBody({ row, props, p, onOpen, className }: { row: Row; props: PropertyDef[]; p: ViewProps; onOpen?: () => void; className?: string }) {
-  const shown = props.filter((d) => {
-    const v = row.values[d.id];
-    return d.type === "CREATED_TIME" || d.type === "LAST_EDITED_TIME" || d.type === "CHECKBOX" || (v !== undefined && v !== null && !(Array.isArray(v) && v.length === 0));
-  });
-  return (
-    <div
-      role="button"
-      tabIndex={-1}
-      onClick={onOpen}
-      data-testid="board-card"
-      className={cn("cursor-pointer space-y-1.5 rounded-lg border bg-surface p-2.5 text-[13px] shadow-xs hover:border-primary/40", className)}
-    >
-      <p className="font-medium">
-        {row.icon && <span className="mr-1">{row.icon}</span>}
-        {row.title || <span className="text-muted-foreground/60">Untitled</span>}
-      </p>
-      {shown.map((d) => (
-        <div key={d.id} className="flex min-w-0 items-center gap-1 text-xs">
-          <ValueDisplay def={d} value={row.values[d.id]} row={row} people={p.people} />
-        </div>
-      ))}
+      <RowCard row={row} props={props} people={p.people} config={p.view.config} onOpen={() => p.onOpenRow(row.id)} />
     </div>
   );
 }

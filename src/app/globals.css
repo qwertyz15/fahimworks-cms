@@ -973,3 +973,13 @@ mark[data-color="orange"], [data-swatch="orange"], .prose-content div[data-board
   overflow-wrap: anywhere;
 }
 .prose-content div[data-board-column] li::marker { content: ""; }
+
+/* Database peek panel */
+@keyframes peek-in {
+  from { transform: translateX(2rem); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.peek-in { animation: peek-in 0.18s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .peek-in { animation: none; }
+}

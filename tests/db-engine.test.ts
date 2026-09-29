@@ -166,12 +166,42 @@ describe.skipIf(!up)("database engine (Postgres)", async () => {
       expect(full.properties).toHaveLength(t.properties.length + 1);
       expect(full.views.map((v) => v.name)).toEqual(t.views.map((v) => v.name));
       for (const v of full.views) if (v.type === "BOARD") expect(full.properties.some((p) => p.id === v.config.groupBy)).toBe(true);
+      for (const v of full.views) if (v.type === "CALENDAR" || v.type === "TIMELINE") expect(full.properties.some((p) => p.id === v.config.dateBy && (p.type === "DATE" || p.type === "CREATED_TIME"))).toBe(true);
       const rows = await svc.queryRows(userId, d.id, { today });
       expect(rows.total).toBe(t.rows.length);
       for (const r of rows.rows) for (const p of full.properties) if (r.values[p.id] !== undefined) expect(validateValue(p, r.values[p.id])).toEqual(r.values[p.id]);
       // Views with filters return a subset without errors.
       for (const v of full.views) await svc.queryRows(userId, d.id, { today, filter: v.config.filter ?? null, sorts: v.config.sorts });
     }
+  });
+
+  it("date window: rows overlapping a range, and the undated tray", async () => {
+    // Due is the 15th of month (i % 12) + 1 in 2026.
+    const march = await svc.queryRows(userId, dbId, { today, window: { propertyId: P.due!, from: "2026-03-01", to: "2026-03-31" } });
+    expect(march.total).toBe(Array.from({ length: 5000 }, (_, i) => i).filter((i) => i % 12 === 2).length);
+    const none = await svc.queryRows(userId, dbId, { today, window: { propertyId: P.due!, from: "2026-03-16", to: "2026-04-14" } });
+    expect(none.total).toBe(0);
+    const row = await svc.createRow(userId, dbId, { title: "Undated" });
+    const tray = await svc.queryRows(userId, dbId, { today, undatedBy: P.due! });
+    expect(tray.rows.map((r) => r.id)).toContain(row.id);
+    // A non-date property as the window is ignored, not an error.
+    const ignored = await svc.queryRows(userId, dbId, { today, window: { propertyId: P.estimate!, from: "2026-01-01", to: "2026-01-02" } });
+    expect(ignored.total).toBeGreaterThan(4000);
+  });
+
+  it("date ranges overlap a window from either side", async () => {
+    const range = await svc.addProperty(userId, dbId, { name: "Span", type: "DATE", config: { range: true } });
+    const r = await svc.createRow(userId, dbId, { title: "Long task", values: { [range.id]: { start: "2026-05-20", end: "2026-06-10" } } });
+    const june = await svc.queryRows(userId, dbId, { today, window: { propertyId: range.id, from: "2026-06-01", to: "2026-06-30" } });
+    expect(june.rows.map((x) => x.id)).toContain(r.id);
+    const july = await svc.queryRows(userId, dbId, { today, window: { propertyId: range.id, from: "2026-07-01", to: "2026-07-31" } });
+    expect(july.rows.map((x) => x.id)).not.toContain(r.id);
+  });
+
+  it("a month window over 5,000 rows is fast", async () => {
+    const t0 = performance.now();
+    await svc.queryRows(userId, dbId, { today, window: { propertyId: P.due!, from: "2026-01-26", to: "2026-03-08" }, sorts: [{ propertyId: P.priority!, direction: "asc" }] });
+    expect(performance.now() - t0).toBeLessThan(300);
   });
 
   it("other users can't read or write", async () => {

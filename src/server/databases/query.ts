@@ -11,6 +11,7 @@ import {
   type FilterNode,
   type FilterRule,
   type SortRule,
+  type DateWindow,
 } from "@/lib/db-views";
 
 /**
@@ -197,4 +198,32 @@ export function compileSearch(q: string | undefined): Prisma.Sql {
   if (!t) return empty;
   const pattern = `%${escapeLike(t.slice(0, 200))}%`;
   return sql`AND (p."title" ILIKE ${pattern} ESCAPE '\\' OR COALESCE(p."search_text", '') ILIKE ${pattern} ESCAPE '\\')`;
+}
+
+/** Start / end date expressions for a date-like property (range end falls back to start). */
+function dateRangeExprs(def: PropertyDef, endDef?: PropertyDef) {
+  const start = dateExpr(def);
+  const end = endDef ? dateExpr(endDef) : def.type === "DATE" ? sql`(p."values" -> ${def.id}::text ->> 'end')` : start;
+  return { start, end: sql`COALESCE(${end}, ${start})` };
+}
+
+const DATE_LIKE = new Set(["DATE", "CREATED_TIME", "LAST_EDITED_TIME"]);
+
+/**
+ * Rows overlapping [from, to] (calendar month, timeline span): start <= to AND end >= from.
+ * Returns null when the property isn't a date.
+ */
+export function compileWindow(w: DateWindow, ctx: CompileContext): Prisma.Sql | null {
+  const def = ctx.props.get(w.propertyId);
+  if (!def || !DATE_LIKE.has(def.type)) return null;
+  const endDef = w.endPropertyId ? ctx.props.get(w.endPropertyId) : undefined;
+  const { start, end } = dateRangeExprs(def, endDef && endDef.type === "DATE" ? endDef : undefined);
+  return sql`(${start} IS NOT NULL AND ${start} <= ${w.to} AND ${end} >= ${w.from})`;
+}
+
+/** Rows with no value for a date property (the "No date" tray). */
+export function compileUndated(propertyId: string, ctx: CompileContext): Prisma.Sql | null {
+  const def = ctx.props.get(propertyId);
+  if (!def || def.type !== "DATE") return null;
+  return sql`(${dateExpr(def)} IS NULL)`;
 }

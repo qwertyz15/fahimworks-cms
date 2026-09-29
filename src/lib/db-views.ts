@@ -8,8 +8,8 @@ import type { PropertyType } from "./db-properties";
 
 export const VIEW_TYPES = ["TABLE", "BOARD", "LIST", "CALENDAR", "TIMELINE", "GALLERY"] as const;
 export type ViewType = (typeof VIEW_TYPES)[number];
-/** Views available in this phase. */
-export const ENABLED_VIEW_TYPES: ViewType[] = ["TABLE", "BOARD", "LIST"];
+/** Views available so far. */
+export const ENABLED_VIEW_TYPES: ViewType[] = ["TABLE", "BOARD", "LIST", "CALENDAR", "TIMELINE", "GALLERY"];
 
 export const OPERATORS = [
   "equals",
@@ -141,6 +141,20 @@ export interface ViewConfig {
   groupBy?: string | null;
   /** Board: hide the "No value" column. */
   hideEmptyGroup?: boolean;
+  /** Calendar date / timeline start (a Date or Created/Last-edited time property). */
+  dateBy?: string | null;
+  /** Timeline end (another Date property); default: the start property's range end. */
+  endBy?: string | null;
+  /** Timeline zoom. */
+  scale?: "day" | "week" | "month";
+  /** Calendar first day of the week. */
+  weekStart?: "mon" | "sun";
+  /** Card cover: none, the page (cover or first image), or a Files property id. */
+  cover?: string | null;
+  cardSize?: "small" | "medium" | "large";
+  coverFit?: "cover" | "contain";
+  /** Clicking a row: side peek (default) or the full page. */
+  openIn?: "peek" | "page";
 }
 
 export const MAX_FILTER_DEPTH = 3;
@@ -173,6 +187,31 @@ export const viewConfigSchema = z.object({
   widths: z.record(idStr, z.number().int().min(60).max(1000)).optional(),
   groupBy: idStr.nullable().optional(),
   hideEmptyGroup: z.boolean().optional(),
+  dateBy: idStr.nullable().optional(),
+  endBy: idStr.nullable().optional(),
+  scale: z.enum(["day", "week", "month"]).optional(),
+  weekStart: z.enum(["mon", "sun"]).optional(),
+  cover: idStr.nullable().optional(),
+  cardSize: z.enum(["small", "medium", "large"]).optional(),
+  coverFit: z.enum(["cover", "contain"]).optional(),
+  openIn: z.enum(["peek", "page"]).optional(),
+});
+
+/** Cover value meaning "the page's own cover / first image". */
+export const PAGE_COVER = "page";
+
+/** Rows in a date range (calendar month, timeline span). Inclusive, YYYY-MM-DD. */
+export interface DateWindow {
+  propertyId: string;
+  endPropertyId?: string | null;
+  from: string;
+  to: string;
+}
+export const dateWindowSchema = z.object({
+  propertyId: idStr,
+  endPropertyId: idStr.nullable().optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
 /** Depth and size limits (also enforced by the compiler). */

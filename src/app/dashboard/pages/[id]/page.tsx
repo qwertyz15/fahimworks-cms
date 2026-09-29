@@ -6,6 +6,8 @@ import type { PropertyValue } from "@/lib/db-properties";
 import { mediaUploadLimitBytes, uploadLimitBytes, uploadsEnabled } from "@/lib/storage";
 import { requireAdmin } from "@/server/auth/guards";
 import { DatabaseError, getPage } from "@/server/databases/service";
+import { publishState } from "@/server/databases/publish";
+import { writtenPostUrl } from "@/lib/timeline";
 
 export const metadata: Metadata = { title: "Page" };
 
@@ -23,7 +25,11 @@ export default async function WorkspacePage({ params }: PageProps<"/dashboard/pa
   return (
     <PageScreen
       key={page.id}
-      page={{
+      articleBaseUrl={writtenPostUrl("")}
+      uploads={{ enabled: uploadsEnabled(), maxBytes: uploadLimitBytes(), maxMediaBytes: mediaUploadLimitBytes() }}
+      data={{
+        publish: await publishState(page.id),
+        page: {
         id: page.id,
         title: page.title,
         icon: page.icon,
@@ -32,11 +38,11 @@ export default async function WorkspacePage({ params }: PageProps<"/dashboard/pa
         values: (page.values ?? {}) as Record<string, PropertyValue>,
         createdAt: page.createdAt.toISOString(),
         updatedAt: page.updatedAt.toISOString(),
+        },
+        database: database ? { id: database.database.id, title: database.database.title, icon: database.database.icon } : null,
+        properties: database?.properties ?? [],
+        people: database?.people ?? [],
       }}
-      database={database ? { id: database.database.id, title: database.database.title, icon: database.database.icon } : null}
-      properties={database?.properties ?? []}
-      people={database?.people ?? []}
-      uploads={{ enabled: uploadsEnabled(), maxBytes: uploadLimitBytes(), maxMediaBytes: mediaUploadLimitBytes() }}
     />
   );
 }
