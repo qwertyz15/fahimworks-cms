@@ -456,7 +456,7 @@ export function DatabaseScreen(init: {
 
   return (
     <RelatedProvider value={{ related, remember, open: openRow }}>
-    <div className="-mx-4 -mt-6 sm:-mx-6 lg:-mx-8 lg:-mt-8">
+    <div data-full-width className="-mx-4 -mt-6 sm:-mx-6 lg:-mx-8 lg:-mt-8">
       {/* Cover */}
       {meta.coverImage ? (
         <div className="group/cover relative h-40 w-full bg-muted sm:h-52">
