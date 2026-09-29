@@ -199,9 +199,16 @@ function BoardView({ node, updateAttributes, deleteNode, editor }: ReactNodeView
       <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
         <span className="font-medium">Board · {totalCards} {totalCards === 1 ? "card" : "cards"}</span>
         {editable && (
-          <button type="button" onClick={() => deleteNode()} className="flex items-center gap-1 rounded-md px-1.5 py-0.5 opacity-0 transition-opacity group-hover/board:opacity-100 hover:text-destructive focus:opacity-100" aria-label="Delete board">
-            <Trash2 className="size-3.5" /> Delete board
-          </button>
+          <span className="flex items-center gap-1">
+            {cols.length < BOARD_MAX_COLUMNS && (
+              <button type="button" onClick={() => commit([...cols, { id: uid(), title: "New column", cards: [] }])} className="flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-muted hover:text-foreground">
+                <Plus className="size-3.5" /> Add column
+              </button>
+            )}
+            <button type="button" onClick={() => deleteNode()} className="flex items-center gap-1 rounded-md px-1.5 py-0.5 opacity-0 transition-opacity group-hover/board:opacity-100 hover:text-destructive focus:opacity-100" aria-label="Delete board">
+              <Trash2 className="size-3.5" /> Delete board
+            </button>
+          </span>
         )}
       </div>
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => ((dragging.current = false), setActiveId(null), setCols(clampBoard(node.attrs.columns as BoardColumn[])))}>
@@ -238,15 +245,6 @@ function BoardView({ node, updateAttributes, deleteNode, editor }: ReactNodeView
               </ColumnView>
             ))}
           </SortableContext>
-          {editable && cols.length < BOARD_MAX_COLUMNS && (
-            <button
-              type="button"
-              onClick={() => commit([...cols, { id: uid(), title: "New column", cards: [] }])}
-              className="flex h-10 w-40 shrink-0 items-center justify-center gap-1 rounded-lg border border-dashed text-xs text-muted-foreground hover:border-primary/40 hover:text-foreground"
-            >
-              <Plus className="size-3.5" /> Add column
-            </button>
-          )}
         </div>
         <DragOverlay>
           {activeCard ? <div className="board-card rotate-2 shadow-pop" {...(activeCard.label ? { "data-swatch": activeCard.label } : {})}>{activeCard.text}</div> : null}

@@ -240,7 +240,7 @@ export function PageEditor({
 
   return (
     <RelatedProvider value={{ related, remember, open: openLinked }}>
-    <div className={cn(!peek && "-mx-4 -mt-6 sm:-mx-6 lg:-mx-8 lg:-mt-8")}>
+    <div data-full-width={peek ? undefined : ""} className={cn("page-bleed", !peek && "-mx-4 -mt-6 sm:-mx-6 lg:-mx-8 lg:-mt-8")}>
       <div className={cn("z-20 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b bg-background/85 px-4 py-2.5 backdrop-blur", peek ? "sticky top-0" : "sticky top-14 sm:px-6 lg:top-0 lg:px-8")}>
         {peek ? (
           <>

@@ -64,7 +64,7 @@ export default async function ArticlePage({ params }: PageProps<"/timeline/p/[sl
   const published = article.publishDate ?? article.publishedAt;
 
   return (
-    <div className="relative min-h-dvh overflow-x-clip bg-background">
+    <div className="page-bleed relative min-h-dvh overflow-x-clip bg-background">
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[26rem]">
         <div className="dot-grid absolute inset-0 [mask-image:radial-gradient(ellipse_60%_60%_at_50%_0%,black,transparent)]" />
         <div className="absolute -top-44 left-1/2 h-[24rem] w-[48rem] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,color-mix(in_oklch,var(--color-primary)_22%,transparent),transparent)] blur-2xl" />

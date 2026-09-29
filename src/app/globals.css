@@ -903,8 +903,9 @@ mark[data-color="orange"], [data-swatch="orange"], .prose-content div[data-board
 
 /* ── Kanban boards ─────────────────────────────────────────────── */
 .board-column {
-  flex: none;
-  width: 15rem;
+  /* Columns share the row; below 13rem each, the board scrolls sideways. */
+  flex: 1 1 0;
+  min-width: 13rem;
   padding: 0.6rem;
   border: 1px solid var(--color-border);
   border-radius: 0.75rem;
@@ -973,6 +974,22 @@ mark[data-color="orange"], [data-swatch="orange"], .prose-content div[data-board
   overflow-wrap: anywhere;
 }
 .prose-content div[data-board-column] li::marker { content: ""; }
+
+/*
+ * Boards use the page's width, not just the text column's: inside a "page"
+ * container they widen (centred, up to 80rem) when there's room either side.
+ */
+.page-bleed { container: page / inline-size; }
+@container page (width > 0) {
+  .notebook-board,
+  .prose-content div[data-type="board"] {
+    --board-width: max(100%, min(100cqw - 3rem, 80rem));
+    width: var(--board-width);
+    max-width: none;
+    /* After the boards' own margin rules, so this centring wins. */
+    margin-inline: calc((100% - var(--board-width)) / 2);
+  }
+}
 
 /* Database peek panel */
 @keyframes peek-in {
