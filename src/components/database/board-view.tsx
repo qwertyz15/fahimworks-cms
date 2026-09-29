@@ -123,12 +123,13 @@ function Board(p: ViewProps & { group: PropertyDef }) {
   return (
     <div className="space-y-2" data-testid="board-view">
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))} onDragEnd={onEnd} onDragCancel={() => setActiveId(null)}>
-        <div className="flex gap-3 overflow-x-auto pb-3">
+        {/* Columns share the full width; the row only scrolls when they can't fit at their minimum. */}
+        <div className="flex items-start gap-3 overflow-x-auto pb-3">
           {columnKeys.map((k) => {
             const option = options.find((o) => o.id === k);
             const ids = columns[k] ?? EMPTY;
             return (
-              <Column key={k} id={k} width={p.view.config.cardSize === "large" ? "w-80" : p.view.config.cardSize === "small" ? "w-52" : "w-64"} label={option ? <OptionChip option={option} /> : <span className="text-xs font-medium text-muted-foreground">No {group.name}</span>} count={ids.length}>
+              <Column key={k} id={k} width={p.view.config.cardSize === "large" ? "min-w-80" : p.view.config.cardSize === "small" ? "min-w-52" : "min-w-64"} label={option ? <OptionChip option={option} /> : <span className="text-xs font-medium text-muted-foreground">No {group.name}</span>} count={ids.length}>
                 <SortableContext items={ids} strategy={verticalListSortingStrategy}>
                   {ids.map((rid) => {
                     const row = byId.get(rid);
@@ -157,7 +158,7 @@ function Board(p: ViewProps & { group: PropertyDef }) {
 function Column({ id, label, count, children, width }: { id: string; label: React.ReactNode; count: number; children: React.ReactNode; width: string }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   return (
-    <section ref={setNodeRef} className={cn("flex shrink-0 flex-col gap-2 rounded-xl border bg-surface-2 p-2", width, isOver && "ring-2 ring-primary/40")} aria-label={`Column ${typeof label === "string" ? label : id}`} data-testid="board-column" data-column={id}>
+    <section ref={setNodeRef} className={cn("flex flex-1 basis-0 flex-col gap-2 rounded-xl border bg-surface-2 p-2", width, isOver && "ring-2 ring-primary/40")} aria-label={`Column ${typeof label === "string" ? label : id}`} data-testid="board-column" data-column={id}>
       <header className="flex items-center gap-2 px-1">
         {label}
         <span className="text-xs text-muted-foreground tabular-nums">{count}</span>
