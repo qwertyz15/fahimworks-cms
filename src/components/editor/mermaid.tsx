@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { Node } from "@tiptap/core";
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from "@tiptap/react";
-import { AlertCircle, Trash2 } from "lucide-react";
+import { AlertCircle, Maximize2, Trash2 } from "lucide-react";
+import { openImageViewer, svgTarget } from "@/components/image-viewer/targets";
 import { cn } from "@/lib/utils";
 import { MERMAID_MAX } from "@/lib/editor-shared";
 import { renderMermaid, useDarkTheme } from "@/lib/mermaid-client";
@@ -70,7 +71,7 @@ function MermaidView({ node, getPos, deleteNode, selected, editor }: ReactNodeVi
     if (editor.isEditable && typeof pos === "number") editMermaid({ pos, source });
   };
   return (
-    <NodeViewWrapper className={cn("notebook-block relative", selected && "is-selected")} data-drag-handle contentEditable={false}>
+    <NodeViewWrapper className={cn("notebook-block group/diagram relative", selected && "is-selected")} data-drag-handle contentEditable={false}>
       <div
         role="button"
         tabIndex={0}
@@ -90,6 +91,21 @@ function MermaidView({ node, getPos, deleteNode, selected, editor }: ReactNodeVi
           <div className="h-24 animate-pulse rounded bg-muted/60" aria-hidden />
         )}
       </div>
+      {result?.svg && (
+        <button
+          type="button"
+          onClick={(e) => {
+            const svg = (e.currentTarget.parentElement?.querySelector(".mermaid-svg svg") ?? null) as SVGSVGElement | null;
+            const t = svg && svgTarget(svg);
+            if (t) openImageViewer(t);
+          }}
+          aria-label="View diagram full screen"
+          title="View full screen"
+          className={cn("absolute top-2 z-10 rounded-md bg-background/90 p-1.5 text-muted-foreground opacity-0 shadow-sm transition-opacity group-hover/diagram:opacity-100 hover:text-foreground focus-visible:opacity-100", editor.isEditable && selected ? "right-11" : "right-2")}
+        >
+          <Maximize2 className="size-4" />
+        </button>
+      )}
       {editor.isEditable && selected && (
         <button type="button" onClick={() => deleteNode()} aria-label="Remove" title="Remove" className="absolute top-2 right-2 z-10 rounded-md bg-background/90 p-1.5 text-muted-foreground shadow-sm hover:text-destructive">
           <Trash2 className="size-4" />

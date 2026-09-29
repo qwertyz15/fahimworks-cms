@@ -1000,3 +1000,27 @@ mark[data-color="orange"], [data-swatch="orange"], .prose-content div[data-board
 @media (prefers-reduced-motion: reduce) {
   .peek-in { animation: none; }
 }
+
+/* ── Image viewer (lightbox) ───────────────────────────────────── */
+dialog.image-viewer {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  color: white;
+  /* Dimmed further by --viewer-dim while swiping down to close. */
+  background: rgb(0 0 0 / calc(0.92 * var(--viewer-dim, 1)));
+  animation: viewer-in 160ms ease-out;
+}
+dialog.image-viewer::backdrop { background: transparent; }
+.image-viewer-media { cursor: grab; }
+.image-viewer-media:active { cursor: grabbing; }
+.image-viewer-media svg { background: var(--color-surface); border-radius: 0.5rem; }
+@keyframes viewer-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { dialog.image-viewer { animation: none; } }

@@ -461,7 +461,7 @@ export function DatabaseScreen(init: {
       {meta.coverImage ? (
         <div className="group/cover relative h-40 w-full bg-muted sm:h-52">
           {/* eslint-disable-next-line @next/next/no-img-element -- media bucket image */}
-          <img src={meta.coverImage} alt="" className="size-full object-cover" />
+          <img data-zoomable src={meta.coverImage} alt="" className="size-full object-cover" />
           <div className="absolute right-4 bottom-3 flex gap-1 opacity-0 transition-opacity group-hover/cover:opacity-100 focus-within:opacity-100">
             <Button size="sm" variant="outline" onClick={() => coverInput.current?.click()}>
               Change cover

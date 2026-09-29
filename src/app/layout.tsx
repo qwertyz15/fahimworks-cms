@@ -4,6 +4,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { editorFontVariables } from "@/lib/fonts";
 import { Providers } from "@/components/providers";
+import { ImageViewer } from "@/components/image-viewer/image-viewer";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" suppressHydrationWarning className={`${GeistSans.variable} ${GeistMono.variable} ${editorFontVariables}`}>
       <body className="min-h-dvh font-sans">
         <Providers nonce={nonce}>{children}</Providers>
+        <ImageViewer />
       </body>
     </html>
   );

@@ -364,7 +364,7 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
             {coverImage ? (
               <div className="space-y-2">
                 {/* eslint-disable-next-line @next/next/no-img-element -- media bucket image */}
-                <img src={coverImage} alt="Cover" className="aspect-[16/9] w-full rounded-lg border object-cover" />
+                <img data-zoomable src={coverImage} alt="Cover" className="aspect-[16/9] w-full rounded-lg border object-cover" />
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => coverPicker.current?.click()} disabled={!!uploading}>
                     Replace

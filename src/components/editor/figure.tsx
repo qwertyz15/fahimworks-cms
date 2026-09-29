@@ -4,7 +4,9 @@
 import Image from "@tiptap/extension-image";
 import { mergeAttributes } from "@tiptap/core";
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from "@tiptap/react";
-import { Trash2 } from "lucide-react";
+import { Maximize2, Trash2 } from "lucide-react";
+import { useRef } from "react";
+import { imageTarget, openImageViewer } from "@/components/image-viewer/targets";
 import { cn } from "@/lib/utils";
 import { IMAGE_WIDTHS, type ImageWidth } from "@/lib/editor-shared";
 
@@ -74,9 +76,26 @@ export const Figure = Image.extend({
 function FigureView({ node, updateAttributes, deleteNode, selected, editor }: ReactNodeViewProps) {
   const { src, alt, caption, width } = node.attrs as { src: string; alt: string | null; caption: string | null; width: ImageWidth | null };
   const editable = editor.isEditable;
+  const img = useRef<HTMLImageElement>(null);
+  const expand = () => {
+    const t = img.current && imageTarget(img.current);
+    if (t) openImageViewer({ ...t, caption });
+  };
   return (
-    <NodeViewWrapper as="figure" className={cn("notebook-figure", selected && "is-selected")} data-width={width ?? undefined} data-drag-handle>
-      <img src={src} alt={alt ?? ""} draggable={false} className="rounded-lg" />
+    <NodeViewWrapper as="figure" className={cn("notebook-figure group/figure relative", selected && "is-selected")} data-width={width ?? undefined} data-drag-handle>
+      <img ref={img} src={src} alt={alt ?? ""} draggable={false} className="rounded-lg" />
+      {editable && (
+        <button
+          type="button"
+          contentEditable={false}
+          onClick={expand}
+          aria-label="View full screen"
+          title="View full screen (or double-click the image)"
+          className="absolute top-2 right-2 rounded-md bg-black/55 p-1.5 text-white opacity-0 shadow-sm transition-opacity group-hover/figure:opacity-100 hover:bg-black/70 focus-visible:opacity-100"
+        >
+          <Maximize2 className="size-3.5" />
+        </button>
+      )}
       {editable && selected ? (
         <div className="mt-2 space-y-2 rounded-lg border bg-surface p-2.5 text-sm" contentEditable={false}>
           <div className="flex items-center gap-1" role="group" aria-label="Image size">
