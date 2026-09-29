@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { JSONContent } from "@tiptap/react";
 import { AlertCircle, ArrowLeft, ArrowUpRight, Check, EyeOff, ImagePlus, Loader2, Maximize2, RefreshCw, Send, X } from "lucide-react";
 import { toast } from "sonner";
@@ -18,6 +19,7 @@ import { EmojiPicker } from "./emoji-picker";
 import { Popover } from "./popover";
 import { TYPE_ICONS } from "./property-menu";
 import type { Person, PropertyDef, Row } from "./types";
+import { RelatedProvider, useRelated, type RelatedPage } from "./relation-editor";
 
 /** Saves this long after the last edit (Ctrl+S saves immediately). */
 const AUTOSAVE_MS = 1500;
@@ -29,6 +31,8 @@ export interface PageEditorData {
   properties: PropertyDef[];
   people: Person[];
   publish: PublishState | null;
+  /** Pages this page's relations link to. */
+  related: Record<string, RelatedPage>;
 }
 
 /**
@@ -62,6 +66,18 @@ export function PageEditor({
   const [row, setRow] = useState<Row>({ id: pageId, title: init.page.title, icon: init.page.icon, thumbnail: init.page.coverImage, values: init.page.values, position: "", createdAt: init.page.createdAt, updatedAt: init.page.updatedAt });
   const [props, setProps] = useState(init.properties);
   const [publish, setPublish] = useState(init.publish);
+  const router = useRouter();
+  const parent = useRelated();
+  const [related, setRelated] = useState(init.related);
+  const remember = useCallback(
+    (more: Record<string, RelatedPage>) => {
+      setRelated((cur) => ({ ...cur, ...more }));
+      parent.remember(more);
+    },
+    [parent],
+  );
+  // Linked pages open in the database's peek panel, or as a page.
+  const openLinked = parent.open ?? ((id: string) => router.push(`/dashboard/pages/${id}`));
   const [editing, setEditing] = useState<{ def: PropertyDef; anchor: HTMLElement } | null>(null);
   const [dirty, setDirty] = useState(false);
   const [tick, setTick] = useState(0);
@@ -166,6 +182,7 @@ export function PageEditor({
     const res = await updateRowAction({ id: pageId, ...patch });
     if (!res.ok || !res.data) return void toast.error(res.ok ? "Could not save." : res.error);
     setRow(res.data);
+    remember(res.data.related);
     setSavedAt(res.data.updatedAt);
     if (patch.title !== undefined) setPublish((p) => (p ? { ...p, outdated: true } : p));
     onRowChangeRef.current?.(res.data);
@@ -222,6 +239,7 @@ export function PageEditor({
   const peek = variant === "peek";
 
   return (
+    <RelatedProvider value={{ related, remember, open: openLinked }}>
     <div className={cn(!peek && "-mx-4 -mt-6 sm:-mx-6 lg:-mx-8 lg:-mt-8")}>
       <div className={cn("z-20 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b bg-background/85 px-4 py-2.5 backdrop-blur", peek ? "sticky top-0" : "sticky top-14 sm:px-6 lg:top-0 lg:px-8")}>
         {peek ? (
@@ -366,6 +384,7 @@ export function PageEditor({
         </Popover>
       )}
     </div>
+    </RelatedProvider>
   );
 }
 

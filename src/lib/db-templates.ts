@@ -1,4 +1,5 @@
 import type { OptionColor, PropertyType, StatusGroup } from "./db-properties";
+import type { RollupFn } from "./db-rollup";
 import type { ViewType } from "./db-views";
 
 /**
@@ -19,6 +20,11 @@ export interface TemplateProperty {
   range?: boolean;
   /** Default for new rows: an option name, true/false, or text. */
   default?: string | boolean | number;
+  /** Relation: `to` is another database of the pack (its `ref`) or "self". */
+  relation?: { to: string; limit?: "one" | "many"; pairedKey?: string; pairedName?: string };
+  /** Rollup: a relation key here, a property key in the related database ("title" for the title). */
+  rollup?: { relation: string; target: string; fn: RollupFn };
+  formula?: string;
 }
 
 export interface TemplateView {
@@ -39,6 +45,7 @@ export interface TemplateView {
   cardSize?: "small" | "medium" | "large";
 }
 
+/** Relation values are titles of rows in the related database. */
 export type TemplateValue = string | number | boolean | string[] | { days: number; endDays?: number };
 
 export interface TemplateRow {
@@ -51,6 +58,8 @@ export interface TemplateRow {
 
 export interface DatabaseTemplate {
   key: string;
+  /** Name of this database inside a pack (relations point at it). */
+  ref?: string;
   name: string;
   category: TemplateCategory;
   icon: string;
@@ -378,6 +387,363 @@ export const TEMPLATES: DatabaseTemplate[] = [
       { title: "Read 12 books", icon: "📚", values: { status: "On track", period: { days: -200, endDays: 90 }, progress: 0.7, area: "Learning" } },
     ],
   },
+  {
+    key: "document-hub",
+    name: "Document Hub",
+    category: "Documentation",
+    icon: "🗂️",
+    description: "Guides, policies and references in one place, linked to each other.",
+    titleName: "Document",
+    properties: [
+      { key: "type", name: "Type", type: "SELECT", options: [["Guide", "blue"], ["Policy", "purple"], ["Reference", "green"], ["How-to", "orange"]] },
+      { key: "status", name: "Status", type: "STATUS", options: [["Draft", "gray", "todo"], ["In review", "yellow", "in_progress"], ["Published", "green", "complete"]], default: "Draft" },
+      { key: "owner", name: "Owner", type: "PERSON" },
+      { key: "related", name: "Related", type: "RELATION", relation: { to: "self", pairedKey: "relatedFrom", pairedName: "Linked from" } },
+      { key: "edited", name: "Last edited", type: "LAST_EDITED_TIME" },
+    ],
+    views: [
+      { name: "All documents", type: "TABLE", sorts: [["edited", "desc"]] },
+      { name: "By type", type: "BOARD", groupBy: "type" },
+      { name: "Published", type: "LIST", filter: [["status", "is", "Published"]] },
+    ],
+    rows: [
+      { title: "Onboarding guide", icon: "👋", values: { type: "Guide", status: "Published", related: ["Code of conduct", "Tooling reference"] }, body: ["# Your first week", "- Set up your laptop", "- Read the code of conduct", "[ ] Meet your buddy"] },
+      { title: "Code of conduct", icon: "🤝", values: { type: "Policy", status: "Published" }, body: ["Be kind, be clear, assume good intent."] },
+      { title: "Tooling reference", icon: "🧰", values: { type: "Reference", status: "In review" }, body: ["Editors, linters and the deploy pipeline."] },
+      { title: "How to request access", icon: "🔑", values: { type: "How-to", status: "Draft", related: ["Tooling reference"] } },
+    ],
+  },
+  {
+    key: "engineering-docs",
+    name: "Engineering Docs",
+    category: "Documentation",
+    icon: "🛠️",
+    description: "RFCs, ADRs, runbooks and specs with their dependencies.",
+    titleName: "Doc",
+    properties: [
+      { key: "type", name: "Type", type: "SELECT", options: [["RFC", "blue"], ["ADR", "purple"], ["Runbook", "orange"], ["Spec", "green"]] },
+      { key: "status", name: "Status", type: "STATUS", options: [["Draft", "gray", "todo"], ["In review", "yellow", "in_progress"], ["Accepted", "green", "complete"], ["Deprecated", "red", "complete"]], default: "Draft" },
+      { key: "owner", name: "Owner", type: "PERSON" },
+      { key: "depends", name: "Depends on", type: "RELATION", relation: { to: "self", pairedKey: "neededBy", pairedName: "Needed by" } },
+      { key: "blockers", name: "Dependencies", type: "ROLLUP", rollup: { relation: "depends", target: "title", fn: "count_all" } },
+      { key: "edited", name: "Last edited", type: "LAST_EDITED_TIME" },
+    ],
+    views: [
+      { name: "All docs", type: "TABLE" },
+      { name: "By status", type: "BOARD", groupBy: "status" },
+      { name: "Runbooks", type: "LIST", filter: [["type", "is", "Runbook"]] },
+    ],
+    rows: [
+      { title: "RFC: Workspace databases", icon: "📐", values: { type: "RFC", status: "Accepted" }, body: ["# Problem", "Content lives in too many places.", "# Proposal", "Rows are pages; views are saved queries."] },
+      { title: "ADR: JSONB for property values", values: { type: "ADR", status: "Accepted", depends: ["RFC: Workspace databases"] } },
+      { title: "Spec: Relations and rollups", values: { type: "Spec", status: "In review", depends: ["RFC: Workspace databases", "ADR: JSONB for property values"] } },
+      { title: "Runbook: Restore the database", icon: "🚨", values: { type: "Runbook", status: "Draft" }, body: ["[ ] Stop writes", "[ ] Restore the latest snapshot", "[ ] Verify row counts"] },
+    ],
+  },
+  {
+    key: "knowledge-base",
+    name: "Knowledge Base",
+    category: "Documentation",
+    icon: "📖",
+    description: "Answers people can find, with verified articles and see-also links.",
+    titleName: "Article",
+    properties: [
+      { key: "category", name: "Category", type: "SELECT", options: [["Getting started", "green"], ["Account", "blue"], ["Billing", "purple"], ["Troubleshooting", "orange"]] },
+      { key: "tags", name: "Tags", type: "MULTI_SELECT", options: [["FAQ", "blue"], ["Video", "red"], ["Advanced", "gray"]] },
+      { key: "verified", name: "Verified", type: "CHECKBOX" },
+      { key: "see", name: "See also", type: "RELATION", relation: { to: "self" } },
+      { key: "edited", name: "Last edited", type: "LAST_EDITED_TIME" },
+    ],
+    views: [
+      { name: "By category", type: "BOARD", groupBy: "category" },
+      { name: "All articles", type: "TABLE" },
+      { name: "Needs review", type: "LIST", filter: [["verified", "unchecked"]] },
+    ],
+    rows: [
+      { title: "Create your account", values: { category: "Getting started", tags: ["FAQ"], verified: true, see: ["Reset your password"] }, body: ["Sign up with your email, then confirm it."] },
+      { title: "Reset your password", values: { category: "Account", tags: ["FAQ"], verified: true } },
+      { title: "Update billing details", values: { category: "Billing", verified: false, see: ["Create your account"] } },
+      { title: "Pages load slowly", values: { category: "Troubleshooting", tags: ["Advanced"], verified: false } },
+    ],
+  },
+  {
+    key: "brainstorm",
+    name: "Brainstorm Session",
+    category: "Meetings",
+    icon: "💡",
+    description: "Collect ideas, vote, and let a score rank them by votes and effort.",
+    titleName: "Idea",
+    properties: [
+      { key: "status", name: "Status", type: "STATUS", options: [["New", "gray", "todo"], ["Exploring", "blue", "in_progress"], ["Chosen", "green", "complete"], ["Parked", "brown", "complete"]], default: "New" },
+      { key: "votes", name: "Votes", type: "NUMBER", default: 0 },
+      { key: "effort", name: "Effort (1–5)", type: "NUMBER" },
+      { key: "score", name: "Score", type: "FORMULA", formula: 'round(prop("Votes") / max(prop("Effort (1–5)"), 1), 1)' },
+      { key: "by", name: "Suggested by", type: "PERSON" },
+    ],
+    views: [
+      { name: "Ranked", type: "TABLE", sorts: [["score", "desc"]] },
+      { name: "Board", type: "BOARD", groupBy: "status" },
+    ],
+    rows: [
+      { title: "Weekly demo day", values: { status: "Exploring", votes: 7, effort: 2 } },
+      { title: "Public roadmap page", values: { status: "New", votes: 5, effort: 3 } },
+      { title: "Dark mode for the timeline", values: { status: "Chosen", votes: 9, effort: 1 } },
+      { title: "Rewrite in Rust", values: { status: "Parked", votes: 2, effort: 5 } },
+    ],
+  },
 ];
 
 export const TEMPLATE_CATEGORIES: TemplateCategory[] = ["Project management", "Personal productivity", "Documentation", "Business", "Content", "Meetings"];
+
+/** Several linked databases created together (relations between them). The first one opens. */
+export interface TemplatePack {
+  key: string;
+  name: string;
+  category: TemplateCategory;
+  icon: string;
+  description: string;
+  databases: (DatabaseTemplate & { ref: string })[];
+}
+
+export const PACKS: TemplatePack[] = [
+  {
+    key: "projects-tasks",
+    name: "Projects & Tasks",
+    category: "Project management",
+    icon: "🗺️",
+    description: "Projects with their tasks linked: progress, open tasks and days left update themselves.",
+    databases: [
+      {
+        key: "projects-tasks:projects",
+        ref: "projects",
+        name: "Projects",
+        category: "Project management",
+        icon: "🗺️",
+        description: "Projects, with progress rolled up from their tasks.",
+        titleName: "Project",
+        properties: [
+          { key: "status", name: "Status", type: "STATUS", options: [["Planning", "gray", "todo"], ["Active", "blue", "in_progress"], ["Done", "green", "complete"]], default: "Planning" },
+          { key: "due", name: "Due", type: "DATE" },
+          { key: "tasks", name: "Tasks", type: "RELATION", relation: { to: "tasks", pairedKey: "project", pairedName: "Project" } },
+          { key: "progress", name: "Progress", type: "ROLLUP", rollup: { relation: "tasks", target: "status", fn: "percent_complete" } },
+          { key: "count", name: "Task count", type: "ROLLUP", rollup: { relation: "tasks", target: "title", fn: "count_all" } },
+          { key: "open", name: "Open tasks", type: "FORMULA", formula: 'round(prop("Task count") * (1 - prop("Progress")))' },
+          { key: "left", name: "Days left", type: "FORMULA", formula: 'dateBetween(prop("Due"), today(), "days")' },
+        ],
+        views: [
+          { name: "All projects", type: "TABLE" },
+          { name: "Board", type: "BOARD", groupBy: "status" },
+        ],
+        rows: [
+          { title: "Website relaunch", icon: "🌐", values: { status: "Active", due: { days: 21 }, tasks: ["Design the homepage", "Write copy", "Set up analytics"] } },
+          { title: "Mobile app", icon: "📱", values: { status: "Planning", due: { days: 60 }, tasks: ["Pick a framework", "Sketch onboarding"] } },
+          { title: "Q3 report", icon: "📊", values: { status: "Done", due: { days: -5 }, tasks: ["Collect numbers", "Write summary"] } },
+        ],
+      },
+      {
+        key: "projects-tasks:tasks",
+        ref: "tasks",
+        name: "Tasks",
+        category: "Project management",
+        icon: "✅",
+        description: "Tasks, each linked to its project.",
+        titleName: "Task",
+        properties: [
+          { key: "status", name: "Status", type: "STATUS", options: STATUS, default: "Not started" },
+          { key: "priority", name: "Priority", type: "SELECT", options: PRIORITY },
+          { key: "due", name: "Due", type: "DATE" },
+          { key: "estimate", name: "Estimate (h)", type: "NUMBER" },
+        ],
+        views: [
+          { name: "Board", type: "BOARD", groupBy: "status" },
+          { name: "All tasks", type: "TABLE" },
+          { name: "Calendar", type: "CALENDAR", dateBy: "due" },
+        ],
+        rows: [
+          { title: "Design the homepage", values: { status: "Done", priority: "High", due: { days: -3 }, estimate: 8 } },
+          { title: "Write copy", values: { status: "In progress", priority: "Medium", due: { days: 4 }, estimate: 5 } },
+          { title: "Set up analytics", values: { status: "Not started", priority: "Low", due: { days: 10 }, estimate: 2 } },
+          { title: "Pick a framework", values: { status: "In progress", priority: "High", due: { days: 7 }, estimate: 3 } },
+          { title: "Sketch onboarding", values: { status: "Not started", priority: "Medium", due: { days: 14 }, estimate: 6 } },
+          { title: "Collect numbers", values: { status: "Done", priority: "High", due: { days: -12 }, estimate: 4 } },
+          { title: "Write summary", values: { status: "Done", priority: "Medium", due: { days: -6 }, estimate: 3 } },
+        ],
+      },
+    ],
+  },
+  {
+    key: "sales-pipeline",
+    name: "Sales Pipeline",
+    category: "Business",
+    icon: "💼",
+    description: "Deals linked to companies: weighted value per deal, pipeline total per company.",
+    databases: [
+      {
+        key: "sales-pipeline:deals",
+        ref: "deals",
+        name: "Deals",
+        category: "Business",
+        icon: "💼",
+        description: "Open and closed deals.",
+        titleName: "Deal",
+        properties: [
+          { key: "stage", name: "Stage", type: "STATUS", options: [["Lead", "gray", "todo"], ["Qualified", "blue", "in_progress"], ["Proposal", "purple", "in_progress"], ["Won", "green", "complete"], ["Lost", "red", "complete"]], default: "Lead" },
+          { key: "value", name: "Value", type: "NUMBER", numberFormat: "usd" },
+          { key: "probability", name: "Probability", type: "NUMBER", numberFormat: "percent" },
+          { key: "close", name: "Close date", type: "DATE" },
+          { key: "company", name: "Company", type: "RELATION", relation: { to: "companies", limit: "one", pairedKey: "deals", pairedName: "Deals" } },
+          { key: "weighted", name: "Weighted value", type: "FORMULA", formula: 'prop("Value") * prop("Probability")', numberFormat: "usd" },
+        ],
+        views: [
+          { name: "Pipeline", type: "BOARD", groupBy: "stage" },
+          { name: "All deals", type: "TABLE", sorts: [["weighted", "desc"]] },
+          { name: "Closing", type: "CALENDAR", dateBy: "close" },
+        ],
+        rows: [
+          { title: "Annual licence", values: { stage: "Proposal", value: 24000, probability: 0.6, close: { days: 14 }, company: ["Northwind"] } },
+          { title: "Pilot project", values: { stage: "Qualified", value: 8000, probability: 0.3, close: { days: 30 }, company: ["Globex"] } },
+          { title: "Support renewal", values: { stage: "Won", value: 6000, probability: 1, close: { days: -7 }, company: ["Northwind"] } },
+          { title: "Team expansion", values: { stage: "Lead", value: 15000, probability: 0.1, close: { days: 45 }, company: ["Initech"] } },
+        ],
+      },
+      {
+        key: "sales-pipeline:companies",
+        ref: "companies",
+        name: "Companies",
+        category: "Business",
+        icon: "🏢",
+        description: "Accounts and their pipeline.",
+        titleName: "Company",
+        properties: [
+          { key: "industry", name: "Industry", type: "SELECT", options: [["Software", "blue"], ["Retail", "orange"], ["Finance", "green"]] },
+          { key: "website", name: "Website", type: "URL" },
+          { key: "total", name: "Pipeline total", type: "ROLLUP", rollup: { relation: "deals", target: "value", fn: "sum" } },
+          { key: "weighted", name: "Weighted total", type: "ROLLUP", rollup: { relation: "deals", target: "weighted", fn: "sum" } },
+          { key: "count", name: "Deals count", type: "ROLLUP", rollup: { relation: "deals", target: "title", fn: "count_all" } },
+        ],
+        views: [{ name: "All companies", type: "TABLE", sorts: [["total", "desc"]] }],
+        rows: [
+          { title: "Northwind", values: { industry: "Retail", website: "https://northwind.example" } },
+          { title: "Globex", values: { industry: "Software", website: "https://globex.example" } },
+          { title: "Initech", values: { industry: "Finance" } },
+        ],
+      },
+    ],
+  },
+  {
+    key: "customer-management",
+    name: "Customer Management",
+    category: "Business",
+    icon: "🧑‍💼",
+    description: "Customers and their orders: lifetime value and days since the last order.",
+    databases: [
+      {
+        key: "customer-management:customers",
+        ref: "customers",
+        name: "Customers",
+        category: "Business",
+        icon: "🧑‍💼",
+        description: "People and companies you sell to.",
+        titleName: "Customer",
+        properties: [
+          { key: "email", name: "Email", type: "EMAIL" },
+          { key: "tier", name: "Tier", type: "SELECT", options: [["Gold", "yellow"], ["Silver", "gray"], ["New", "green"]] },
+          { key: "ltv", name: "Lifetime value", type: "ROLLUP", rollup: { relation: "orders", target: "amount", fn: "sum" } },
+          { key: "last", name: "Last order", type: "ROLLUP", rollup: { relation: "orders", target: "date", fn: "latest" } },
+          { key: "since", name: "Days since last order", type: "FORMULA", formula: 'dateBetween(today(), prop("Last order"), "days")' },
+        ],
+        views: [
+          { name: "All customers", type: "TABLE", sorts: [["ltv", "desc"]] },
+          { name: "By tier", type: "BOARD", groupBy: "tier" },
+        ],
+        rows: [
+          { title: "Ada Lovelace", values: { email: "ada@example.com", tier: "Gold" } },
+          { title: "Grace Hopper", values: { email: "grace@example.com", tier: "Silver" } },
+          { title: "Alan Turing", values: { email: "alan@example.com", tier: "New" } },
+        ],
+      },
+      {
+        key: "customer-management:orders",
+        ref: "orders",
+        name: "Orders",
+        category: "Business",
+        icon: "🧾",
+        description: "Orders, each for one customer.",
+        titleName: "Order",
+        properties: [
+          { key: "date", name: "Date", type: "DATE" },
+          { key: "amount", name: "Amount", type: "NUMBER", numberFormat: "usd" },
+          { key: "status", name: "Status", type: "SELECT", options: [["Paid", "green"], ["Pending", "yellow"], ["Refunded", "red"]] },
+          { key: "customer", name: "Customer", type: "RELATION", relation: { to: "customers", limit: "one", pairedKey: "orders", pairedName: "Orders" } },
+        ],
+        views: [
+          { name: "All orders", type: "TABLE", sorts: [["date", "desc"]] },
+          { name: "Calendar", type: "CALENDAR", dateBy: "date" },
+        ],
+        rows: [
+          { title: "#1001", values: { date: { days: -40 }, amount: 320, status: "Paid", customer: ["Ada Lovelace"] } },
+          { title: "#1002", values: { date: { days: -12 }, amount: 180, status: "Paid", customer: ["Ada Lovelace"] } },
+          { title: "#1003", values: { date: { days: -3 }, amount: 95, status: "Pending", customer: ["Grace Hopper"] } },
+          { title: "#1004", values: { date: { days: -60 }, amount: 540, status: "Paid", customer: ["Grace Hopper"] } },
+        ],
+      },
+    ],
+  },
+  {
+    key: "inventory",
+    name: "Inventory",
+    category: "Business",
+    icon: "📦",
+    description: "Products and suppliers: stock value, reorder flags and stock per supplier.",
+    databases: [
+      {
+        key: "inventory:products",
+        ref: "products",
+        name: "Products",
+        category: "Business",
+        icon: "📦",
+        description: "What you stock.",
+        titleName: "Product",
+        properties: [
+          { key: "sku", name: "SKU", type: "TEXT" },
+          { key: "qty", name: "Qty", type: "NUMBER" },
+          { key: "min", name: "Min stock", type: "NUMBER" },
+          { key: "price", name: "Unit price", type: "NUMBER", numberFormat: "usd" },
+          { key: "supplier", name: "Supplier", type: "RELATION", relation: { to: "suppliers", limit: "one", pairedKey: "products", pairedName: "Products" } },
+          { key: "value", name: "Stock value", type: "FORMULA", formula: 'prop("Qty") * prop("Unit price")', numberFormat: "usd" },
+          { key: "reorder", name: "Reorder?", type: "FORMULA", formula: 'prop("Qty") < prop("Min stock")' },
+        ],
+        views: [
+          { name: "All products", type: "TABLE" },
+          { name: "Reorder", type: "TABLE", filter: [["reorder", "checked"]] },
+        ],
+        rows: [
+          { title: "USB-C cable", values: { sku: "CAB-01", qty: 140, min: 50, price: 6.5, supplier: ["Cable Co"] } },
+          { title: "Laptop stand", values: { sku: "STD-02", qty: 8, min: 15, price: 34, supplier: ["DeskWorks"] } },
+          { title: "Monitor arm", values: { sku: "ARM-03", qty: 22, min: 10, price: 79, supplier: ["DeskWorks"] } },
+          { title: "HDMI adapter", values: { sku: "ADP-04", qty: 3, min: 20, price: 12, supplier: ["Cable Co"] } },
+        ],
+      },
+      {
+        key: "inventory:suppliers",
+        ref: "suppliers",
+        name: "Suppliers",
+        category: "Business",
+        icon: "🚚",
+        description: "Who you buy from.",
+        titleName: "Supplier",
+        properties: [
+          { key: "email", name: "Email", type: "EMAIL" },
+          { key: "country", name: "Country", type: "SELECT", options: [["Bangladesh", "green"], ["Germany", "gray"], ["Japan", "red"]] },
+          { key: "count", name: "Product count", type: "ROLLUP", rollup: { relation: "products", target: "title", fn: "count_all" } },
+          { key: "stock", name: "Stock value", type: "ROLLUP", rollup: { relation: "products", target: "value", fn: "sum" } },
+        ],
+        views: [{ name: "All suppliers", type: "TABLE" }],
+        rows: [
+          { title: "Cable Co", values: { email: "orders@cable.example", country: "Japan" } },
+          { title: "DeskWorks", values: { email: "sales@deskworks.example", country: "Germany" } },
+        ],
+      },
+    ],
+  },
+];

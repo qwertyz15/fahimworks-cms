@@ -21,7 +21,7 @@ export default async function WorkspacePage({ params }: PageProps<"/dashboard/pa
     if (err instanceof DatabaseError) notFound();
     throw err;
   }
-  const { page, database } = data;
+  const { page, database, related } = data;
   return (
     <PageScreen
       key={page.id}
@@ -42,6 +42,7 @@ export default async function WorkspacePage({ params }: PageProps<"/dashboard/pa
         database: database ? { id: database.database.id, title: database.database.title, icon: database.database.icon } : null,
         properties: database?.properties ?? [],
         people: database?.people ?? [],
+        related,
       }}
     />
   );

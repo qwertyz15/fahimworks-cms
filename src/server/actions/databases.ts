@@ -73,14 +73,23 @@ export async function deleteDatabaseAction(payload: unknown): Res<undefined> {
 // ── Properties ──
 export async function addPropertyAction(payload: unknown): Res<PropertyDef> {
   return adminAction(async (user) => {
-    const input = z.object({ databaseId: id, name: z.string().max(100), type: z.enum(PROPERTY_TYPES), afterId: nullableId }).parse(payload);
+    const input = z
+      .object({
+        databaseId: id,
+        name: z.string().max(100),
+        type: z.enum(PROPERTY_TYPES),
+        afterId: nullableId,
+        config: z.record(z.string(), z.unknown()).optional(),
+        relation: z.object({ databaseId: id, limit: z.enum(["one", "many"]), twoWay: z.boolean(), pairedName: z.string().max(100).optional() }).optional(),
+      })
+      .parse(payload);
     return { ok: true, data: await svc.addProperty(user.id, input.databaseId, input) };
   });
 }
 
 export async function updatePropertyAction(payload: unknown): Res<PropertyDef> {
   return adminAction(async (user) => {
-    const input = z.object({ id, name: z.string().max(100).optional(), config: z.record(z.string(), z.unknown()).optional() }).parse(payload);
+    const input = z.object({ id, name: z.string().max(100).optional(), config: z.record(z.string(), z.unknown()).optional(), twoWay: z.boolean().optional(), pairedName: z.string().max(100).optional() }).parse(payload);
     return { ok: true, data: await svc.updateProperty(user.id, input.id, input) };
   });
 }
@@ -131,7 +140,7 @@ export async function deleteViewAction(payload: unknown): Res<undefined> {
 }
 
 // ── Rows ──
-export async function queryRowsAction(payload: unknown): Res<{ rows: svc.RowData[]; total: number }> {
+export async function queryRowsAction(payload: unknown): Res<{ rows: svc.RowData[]; total: number; related: Record<string, svc.RelatedPage> }> {
   return adminAction(async (user) => {
     const input = z
       .object({
@@ -151,14 +160,14 @@ export async function queryRowsAction(payload: unknown): Res<{ rows: svc.RowData
   });
 }
 
-export async function createRowAction(payload: unknown): Res<svc.RowData> {
+export async function createRowAction(payload: unknown): Res<svc.RowWrite> {
   return adminAction(async (user) => {
     const input = z.object({ databaseId: id, title: z.string().max(300).optional(), values: values.optional(), afterId: nullableId, beforeId: nullableId }).parse(payload);
     return { ok: true, data: await svc.createRow(user.id, input.databaseId, input) };
   });
 }
 
-export async function updateRowAction(payload: unknown): Res<svc.RowData> {
+export async function updateRowAction(payload: unknown): Res<svc.RowWrite> {
   return adminAction(async (user) => {
     const input = z.object({ id, title: z.string().max(300).optional(), icon: z.string().max(16).nullable().optional(), values: values.optional() }).parse(payload);
     return { ok: true, data: await svc.updateRow(user.id, input.id, input) };
@@ -199,6 +208,31 @@ export async function bulkUpdateAction(payload: unknown): Res<number> {
   });
 }
 
+// ── Relations ──
+/** Databases a relation can point at (for the property menu). */
+export async function listDatabasesAction(): Res<{ id: string; title: string; icon: string | null }[]> {
+  return adminAction(async (user) => {
+    const rows = await svc.listDatabases(user.id);
+    return { ok: true, data: rows.map((r) => ({ id: r.id, title: r.title, icon: r.icon })) };
+  });
+}
+
+/** Another database's properties (rollup set-up). */
+export async function databasePropertiesAction(payload: unknown): Res<{ title: string; properties: PropertyDef[] }> {
+  return adminAction(async (user) => {
+    const d = await svc.getDatabase(user.id, z.object({ id }).parse(payload).id);
+    return { ok: true, data: { title: d.database.title, properties: d.properties } };
+  });
+}
+
+/** Rows of the relation's target database matching a search (the link picker). */
+export async function searchRelationTargetsAction(payload: unknown): Res<{ id: string; title: string; icon: string | null }[]> {
+  return adminAction(async (user) => {
+    const input = z.object({ databaseId: id, q: z.string().max(200).default(""), ids: z.array(id).max(500).optional() }).parse(payload);
+    return { ok: true, data: await svc.searchRows(user.id, input.databaseId, input.q, input.ids) };
+  });
+}
+
 // ── Row pages ──
 export async function savePageAction(payload: unknown): Res<{ id: string; updatedAt: string; words: number }> {
   return adminAction(async (user) => {
@@ -223,12 +257,13 @@ export interface PageData {
   properties: PropertyDef[];
   people: { id: string; name: string }[];
   publish: PublishState | null;
+  related: Record<string, svc.RelatedPage>;
 }
 
 /** Everything the peek panel needs to show and edit a row page. */
 export async function getPageAction(payload: unknown): Res<PageData> {
   return adminAction(async (user) => {
-    const { page, database } = await svc.getPage(user.id, z.object({ id }).parse(payload).id);
+    const { page, database, related } = await svc.getPage(user.id, z.object({ id }).parse(payload).id);
     return {
       ok: true,
       data: {
@@ -237,6 +272,7 @@ export async function getPageAction(payload: unknown): Res<PageData> {
         properties: database?.properties ?? [],
         people: database?.people ?? [],
         publish: await publishState(page.id),
+        related,
       },
     };
   });

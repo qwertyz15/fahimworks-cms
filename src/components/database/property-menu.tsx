@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlignLeft,
   ArrowDownAZ,
@@ -22,8 +22,12 @@ import {
   Trash2,
   User,
   type LucideIcon,
+  ArrowUpRight,
+  Layers,
+  Sigma,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   ADDABLE_TYPES,
   COMPUTED_TYPES,
@@ -42,6 +46,8 @@ import {
   type StatusGroup,
 } from "@/lib/db-properties";
 import { OPTION_DOT } from "./colors";
+import { ROLLUP_LABELS, rollupFnsFor, type RollupFn } from "@/lib/db-rollup";
+import { databasePropertiesAction, listDatabasesAction } from "@/server/actions/databases";
 import { ValueDisplay, ValueEditor } from "./cells";
 import type { Person } from "./types";
 import type { EditorUploadConfig } from "@/components/editor/rich-editor";
@@ -62,13 +68,25 @@ export const TYPE_ICONS: Record<PropertyType, LucideIcon> = {
   FILES: Paperclip,
   CREATED_TIME: Clock,
   LAST_EDITED_TIME: Clock,
+  RELATION: ArrowUpRight,
+  ROLLUP: Layers,
+  FORMULA: Sigma,
 };
 
 const FORMAT_LABELS: Record<NumberFormat, string> = { number: "Number", comma: "Number with commas", percent: "Percent", usd: "US dollar", eur: "Euro", gbp: "Pound", bdt: "Taka" };
 
 /** Pick a type for a new property. */
-export function AddPropertyMenu({ onAdd }: { onAdd: (type: PropertyType, name: string) => void }) {
+export interface RelationSetup {
+  databaseId: string;
+  limit: "one" | "many";
+  twoWay: boolean;
+  pairedName?: string;
+}
+
+export function AddPropertyMenu({ onAdd, databaseId }: { onAdd: (type: PropertyType, name: string, relation?: RelationSetup) => void; databaseId: string }) {
   const [name, setName] = useState("");
+  const [relation, setRelation] = useState(false);
+  if (relation) return <RelationSetupForm databaseId={databaseId} onBack={() => setRelation(false)} onCreate={(r) => onAdd("RELATION", name.trim() || "Related", r)} />;
   return (
     <div className="w-60">
       <input
@@ -84,7 +102,7 @@ export function AddPropertyMenu({ onAdd }: { onAdd: (type: PropertyType, name: s
       {ADDABLE_TYPES.map((t) => {
         const Icon = TYPE_ICONS[t];
         return (
-          <button key={t} type="button" onClick={() => onAdd(t, name.trim() || TYPE_LABELS[t])} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-muted">
+          <button key={t} type="button" onClick={() => (t === "RELATION" ? setRelation(true) : onAdd(t, name.trim() || TYPE_LABELS[t]))} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-muted">
             <Icon className="size-3.5 text-muted-foreground" /> {TYPE_LABELS[t]}
           </button>
         );
@@ -100,10 +118,29 @@ export interface PropertyMenuActions {
   hide?: () => void;
   remove: () => void;
   sort?: (direction: "asc" | "desc") => void;
+  /** Formula: open the formula editor. */
+  editFormula?: () => void;
+  /** Relation: turn the reverse property on / off. */
+  setTwoWay?: (on: boolean, pairedName?: string) => Promise<unknown>;
 }
 
 /** Edit a property: name, type, options, format, default, hide, delete. */
-export function PropertyMenu({ def, actions, onClose, people, uploads }: { def: PropertyDef; actions: PropertyMenuActions; onClose: () => void; people: Person[]; uploads: EditorUploadConfig }) {
+export function PropertyMenu({
+  def,
+  actions,
+  onClose,
+  people,
+  uploads,
+  allProps = [],
+}: {
+  def: PropertyDef;
+  actions: PropertyMenuActions;
+  onClose: () => void;
+  people: Person[];
+  uploads: EditorUploadConfig;
+  /** Every property of the database (rollups pick a relation). */
+  allProps?: PropertyDef[];
+}) {
   const [name, setName] = useState(def.name);
   const [typePicker, setTypePicker] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -126,7 +163,7 @@ export function PropertyMenu({ def, actions, onClose, people, uploads }: { def: 
 
       {!def.isTitle && (
         <div>
-          <button type="button" onClick={() => setTypePicker((v) => !v)} aria-expanded={typePicker} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-muted">
+          <button type="button" disabled={def.type === "RELATION"} onClick={() => setTypePicker((v) => !v)} aria-expanded={typePicker} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-muted">
             <span className="text-muted-foreground">Type</span>
             <span className="flex-1" />
             {(() => {
@@ -137,7 +174,7 @@ export function PropertyMenu({ def, actions, onClose, people, uploads }: { def: 
           </button>
           {typePicker && (
             <div className="ml-2 border-l pl-1" role="group" aria-label="Change type">
-              {ADDABLE_TYPES.filter((t) => t !== def.type).map((t) => {
+              {ADDABLE_TYPES.filter((t) => t !== def.type && t !== "RELATION").map((t) => {
                 const Icon = TYPE_ICONS[t];
                 return (
                   <button
@@ -158,7 +195,18 @@ export function PropertyMenu({ def, actions, onClose, people, uploads }: { def: 
         </div>
       )}
 
-      {def.type === "NUMBER" && (
+      {def.type === "RELATION" && <RelationSettings def={def} actions={actions} />}
+      {def.type === "ROLLUP" && <RollupSettings def={def} allProps={allProps} onSave={(config) => actions.updateConfig(config)} />}
+      {def.type === "FORMULA" && (
+        <div className="px-2 py-1">
+          <button type="button" onClick={() => (actions.editFormula?.(), onClose())} className="flex w-full items-center gap-2 rounded-md border bg-muted/40 px-2 py-1.5 text-left hover:bg-muted" aria-label="Edit formula">
+            <Sigma className="size-3.5 shrink-0 text-muted-foreground" />
+            <code className="min-w-0 flex-1 truncate font-mono text-xs">{def.config.formula?.expression || "Write a formula…"}</code>
+          </button>
+        </div>
+      )}
+
+      {(def.type === "NUMBER" || ((def.type === "ROLLUP" || def.type === "FORMULA") && def.config.resultType === "number")) && (
         <label className="flex items-center gap-2 px-2 py-1 text-[13px]">
           <span className="text-muted-foreground">Format</span>
           <select
@@ -317,6 +365,179 @@ function DefaultValue({
         <div className="ml-2 border-l pl-1">
           <ValueEditor def={def} value={def.config.default ?? null} people={people} onChange={onSave} onClose={() => setOpen(false)} onUpdateOptions={onUpdateOptions} uploads={uploads} rowId="" />
         </div>
+      )}
+    </div>
+  );
+}
+
+function useDatabases() {
+  const [list, setList] = useState<{ id: string; title: string; icon: string | null }[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    void listDatabasesAction().then((r) => live && setList(r.ok ? (r.data ?? []) : []));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return list;
+}
+
+const field = "w-full rounded-md border bg-background px-1.5 py-1 text-[13px]";
+
+/** New relation: which database, one or many, and the reverse property. */
+function RelationSetupForm({ databaseId, onBack, onCreate }: { databaseId: string; onBack: () => void; onCreate: (r: RelationSetup) => void }) {
+  const dbs = useDatabases();
+  const [target, setTarget] = useState("");
+  const [limit, setLimit] = useState<"one" | "many">("many");
+  const [twoWay, setTwoWay] = useState(true);
+  const [pairedName, setPairedName] = useState("");
+  const chosen = target || dbs?.[0]?.id || "";
+  return (
+    <div className="w-64 space-y-2 p-1 text-[13px]">
+      <button type="button" onClick={onBack} className="text-xs text-muted-foreground hover:text-foreground">
+        ← Back
+      </button>
+      <label className="block">
+        <span className="text-xs text-muted-foreground">Link to</span>
+        <select value={chosen} onChange={(e) => setTarget(e.target.value)} aria-label="Related database" className={cn(field, "mt-0.5")} disabled={!dbs}>
+          {dbs?.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.icon ? `${d.icon} ` : ""}
+              {d.title}
+              {d.id === databaseId ? " (this database)" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block">
+        <span className="text-xs text-muted-foreground">Each row links to</span>
+        <select value={limit} onChange={(e) => setLimit(e.target.value as "one" | "many")} aria-label="Limit" className={cn(field, "mt-0.5")}>
+          <option value="many">Any number of pages</option>
+          <option value="one">One page</option>
+        </select>
+      </label>
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={twoWay} onChange={(e) => setTwoWay(e.target.checked)} /> Show on the other database too
+      </label>
+      {twoWay && <input value={pairedName} onChange={(e) => setPairedName(e.target.value)} maxLength={100} placeholder="Name there (optional)" aria-label="Related property name" className={field} />}
+      <Button size="sm" className="w-full" disabled={!chosen} onClick={() => onCreate({ databaseId: chosen, limit, twoWay, pairedName: pairedName.trim() || undefined })}>
+        Add relation
+      </Button>
+    </div>
+  );
+}
+
+function RelationSettings({ def, actions }: { def: PropertyDef; actions: PropertyMenuActions }) {
+  const dbs = useDatabases();
+  const cfg = def.config.relation;
+  const [busy, setBusy] = useState(false);
+  if (!cfg) return null;
+  const target = dbs?.find((d) => d.id === cfg.databaseId);
+  return (
+    <div className="space-y-1 px-2 py-1 text-[13px]">
+      <p className="flex items-center gap-1.5 text-muted-foreground">
+        <ArrowUpRight className="size-3.5" /> Links to <span className="truncate font-medium text-foreground">{target ? `${target.icon ?? ""} ${target.title}` : "…"}</span>
+      </p>
+      <label className="flex items-center gap-2">
+        <span className="text-muted-foreground">Limit</span>
+        <select value={cfg.limit} onChange={(e) => void actions.updateConfig({ ...def.config, relation: { ...cfg, limit: e.target.value as "one" | "many" } })} aria-label="Limit" className="ml-auto rounded-md border bg-background px-1.5 py-0.5 text-[13px]">
+          <option value="many">No limit</option>
+          <option value="one">One page</option>
+        </select>
+      </label>
+      {actions.setTwoWay && (
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={Boolean(cfg.pairedId)}
+            disabled={busy}
+            onChange={async (e) => {
+              setBusy(true);
+              await actions.setTwoWay!(e.target.checked);
+              setBusy(false);
+            }}
+          />
+          Show on {target?.title ?? "the other database"}
+        </label>
+      )}
+    </div>
+  );
+}
+
+/** Rollup: relation → property → calculation. Saved once a property is picked. */
+function RollupSettings({ def, allProps, onSave }: { def: PropertyDef; allProps: PropertyDef[]; onSave: (c: PropertyConfig) => Promise<unknown> }) {
+  const relations = allProps.filter((p) => p.type === "RELATION");
+  const cfg = def.config.rollup;
+  const [relId, setRelId] = useState(cfg?.relationId ?? "");
+  const relation = relations.find((r) => r.id === relId) ?? null;
+  const targetDb = relation?.config.relation?.databaseId ?? null;
+  const [target, setTarget] = useState<{ databaseId: string; props: PropertyDef[] } | null>(null);
+  useEffect(() => {
+    if (!targetDb) return;
+    let live = true;
+    void databasePropertiesAction({ id: targetDb }).then((r) => live && setTarget({ databaseId: targetDb, props: r.ok && r.data ? r.data.properties : [] }));
+    return () => {
+      live = false;
+    };
+  }, [targetDb]);
+  const targetProps = target?.databaseId === targetDb ? target.props : null;
+  const sameRelation = cfg?.relationId === relId;
+  const targetDef = (sameRelation && targetProps?.find((p) => p.id === cfg?.targetId)) || null;
+  const fns = targetDef ? rollupFnsFor(targetDef) : [];
+  const save = (targetId: string, fn: string) => void onSave({ ...def.config, rollup: { relationId: relId, targetId, fn }, numberFormat: undefined });
+  if (!relations.length) return <p className="px-2 py-1 text-xs text-muted-foreground">Add a Relation property first — a rollup calculates over the pages it links to.</p>;
+  return (
+    <div className="space-y-1.5 px-2 py-1 text-[13px]">
+      <label className="block">
+        <span className="text-xs text-muted-foreground">Relation</span>
+        <select value={relId} onChange={(e) => setRelId(e.target.value)} aria-label="Rollup relation" className={cn(field, "mt-0.5")}>
+          <option value="" disabled>
+            Choose…
+          </option>
+          {relations.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {relation && (
+        <label className="block">
+          <span className="text-xs text-muted-foreground">Property</span>
+          <select
+            value={targetDef?.id ?? ""}
+            onChange={(e) => {
+              const t = targetProps?.find((p) => p.id === e.target.value);
+              if (!t) return;
+              const ok = rollupFnsFor(t);
+              save(t.id, ok.includes(cfg?.fn as RollupFn) ? cfg!.fn : ok.includes("show_original") ? "show_original" : ok[0]!);
+            }}
+            aria-label="Rollup property"
+            className={cn(field, "mt-0.5")}
+            disabled={!targetProps}
+          >
+            <option value="" disabled>
+              {targetProps ? "Choose…" : "Loading…"}
+            </option>
+            {targetProps?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {targetDef && (
+        <label className="block">
+          <span className="text-xs text-muted-foreground">Calculate</span>
+          <select value={fns.includes(cfg?.fn as RollupFn) ? cfg!.fn : ""} onChange={(e) => save(targetDef.id, e.target.value)} aria-label="Rollup calculation" className={cn(field, "mt-0.5")}>
+            {fns.map((f) => (
+              <option key={f} value={f}>
+                {ROLLUP_LABELS[f]}
+              </option>
+            ))}
+          </select>
+        </label>
       )}
     </div>
   );

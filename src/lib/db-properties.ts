@@ -21,14 +21,29 @@ export const PROPERTY_TYPES = [
   "FILES",
   "CREATED_TIME",
   "LAST_EDITED_TIME",
+  "RELATION",
+  "ROLLUP",
+  "FORMULA",
 ] as const;
 export type PropertyType = (typeof PROPERTY_TYPES)[number];
 
 /** Types the user can pick when adding a property (Title is always there, exactly once). */
 export const ADDABLE_TYPES = PROPERTY_TYPES.filter((t) => t !== "TITLE");
 
-/** Computed from the page itself — nothing stored, not editable. */
-export const COMPUTED_TYPES: readonly PropertyType[] = ["CREATED_TIME", "LAST_EDITED_TIME"];
+/** Not editable by hand: page timestamps, and results the server calculates (cached in values). */
+export const COMPUTED_TYPES: readonly PropertyType[] = ["CREATED_TIME", "LAST_EDITED_TIME", "ROLLUP", "FORMULA"];
+
+/** Rollup and formula results: what they behave like in filters, sorts and cells. */
+export const RESULT_TYPES = ["number", "text", "boolean", "date", "list"] as const;
+export type ResultType = (typeof RESULT_TYPES)[number];
+const RESULT_AS: Record<ResultType, PropertyType> = { number: "NUMBER", text: "TEXT", boolean: "CHECKBOX", date: "DATE", list: "MULTI_SELECT" };
+
+/** The type a property acts as: rollups and formulas act as their result type. */
+export function behavesAs(def: Pick<PropertyDef, "type" | "config">): PropertyType {
+  if (def.type === "ROLLUP" || def.type === "FORMULA") return RESULT_AS[def.config.resultType ?? "text"] ?? "TEXT";
+  return def.type;
+}
+export const isResultProp = (def: Pick<PropertyDef, "type">) => def.type === "ROLLUP" || def.type === "FORMULA";
 
 export const OPTION_COLORS = ["gray", "brown", "orange", "yellow", "green", "blue", "purple", "pink", "red"] as const;
 export type OptionColor = (typeof OPTION_COLORS)[number];
@@ -51,8 +66,28 @@ export interface SelectOption {
 export const NUMBER_FORMATS = ["number", "comma", "percent", "usd", "eur", "gbp", "bdt"] as const;
 export type NumberFormat = (typeof NUMBER_FORMATS)[number];
 
+export interface RelationConfig {
+  databaseId: string;
+  limit: "one" | "many";
+  /** Two-way: the property on the other database showing the same links in reverse. */
+  pairedId?: string | null;
+  /** The side that owns the PageRelation rows (the one created first). */
+  primary?: boolean;
+}
+export interface RollupConfig {
+  relationId: string;
+  /** Property of the related database to aggregate. */
+  targetId: string;
+  fn: string;
+}
+
 export interface PropertyConfig {
   options?: SelectOption[];
+  relation?: RelationConfig;
+  rollup?: RollupConfig;
+  formula?: { expression: string };
+  /** Rollup / formula: the result's type (set by the server). */
+  resultType?: ResultType;
   numberFormat?: NumberFormat;
   /** Date: also store an end date (date range). */
   range?: boolean;
@@ -71,7 +106,13 @@ export interface FileValue {
   size?: number;
   mime?: string;
 }
-export type PropertyValue = string | number | boolean | string[] | DateValue | FileValue[] | null;
+/** A formula / rollup that couldn't be calculated. */
+export interface ComputedError {
+  error: string;
+}
+export type PropertyValue = string | number | boolean | string[] | DateValue | FileValue[] | ComputedError | null;
+
+export const isComputedError = (v: unknown): v is ComputedError => typeof v === "object" && v !== null && !Array.isArray(v) && typeof (v as ComputedError).error === "string";
 
 export interface PropertyDef {
   id: string;
@@ -97,6 +138,9 @@ export const TYPE_LABELS: Record<PropertyType, string> = {
   FILES: "Files & media",
   CREATED_TIME: "Created time",
   LAST_EDITED_TIME: "Last edited time",
+  RELATION: "Relation",
+  ROLLUP: "Rollup",
+  FORMULA: "Formula",
 };
 
 export const LIMITS = {
@@ -109,6 +153,7 @@ export const LIMITS = {
   people: 20,
   propertyName: 100,
   properties: 60,
+  relations: 500,
 } as const;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -215,8 +260,16 @@ export function validateValue(def: Pick<PropertyDef, "type" | "config" | "name">
       }
       return out.length ? out : null;
     }
+    case "RELATION": {
+      if (!Array.isArray(raw)) fail("expected a list of pages");
+      const out = [...new Set(raw as unknown[])].filter((v): v is string => typeof v === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(v));
+      const max = def.config.relation?.limit === "one" ? 1 : LIMITS.relations;
+      return out.length ? out.slice(0, max) : null;
+    }
     case "CREATED_TIME":
     case "LAST_EDITED_TIME":
+    case "ROLLUP":
+    case "FORMULA":
       return null;
   }
 }
@@ -224,6 +277,8 @@ export function validateValue(def: Pick<PropertyDef, "type" | "config" | "name">
 /** Plain text of a value (search, conversion, list view). */
 export function valueText(def: Pick<PropertyDef, "type" | "config">, v: PropertyValue): string {
   if (v === null || v === undefined) return "";
+  if (isComputedError(v)) return "";
+  if (isResultProp(def)) return resultText(def, v);
   const opt = (id: string) => def.config.options?.find((o) => o.id === id)?.name ?? "";
   switch (def.type) {
     case "SELECT":
@@ -240,12 +295,36 @@ export function valueText(def: Pick<PropertyDef, "type" | "config">, v: Property
     case "FILES":
       return (v as FileValue[]).map((f) => f.name).join(", ");
     case "PERSON":
+    case "RELATION":
       return "";
     case "NUMBER":
       return String(v);
     default:
       return typeof v === "string" ? v : "";
   }
+}
+
+/** A rollup / formula result as text. */
+function resultText(def: Pick<PropertyDef, "config">, v: PropertyValue): string {
+  if (typeof v === "number") return formatNumber(v, def.config.numberFormat);
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (Array.isArray(v)) return v.filter((x) => typeof x === "string").join(", ");
+  if (typeof v === "object" && v && "start" in v) return v.end ? `${v.start} → ${v.end}` : v.start;
+  return typeof v === "string" ? v : "";
+}
+
+/** A value as separate display items (rollup "show original", unique counts). */
+export function displayItems(def: Pick<PropertyDef, "type" | "config">, v: PropertyValue | undefined): string[] {
+  if (v === null || v === undefined || isComputedError(v)) return [];
+  if (Array.isArray(v)) {
+    if (def.type === "MULTI_SELECT") return v.map((id) => def.config.options?.find((o) => o.id === id)?.name ?? "").filter(Boolean);
+    if (def.type === "FILES") return (v as FileValue[]).map((f) => f.name);
+    if (def.type === "RELATION" || def.type === "PERSON") return v as string[];
+    return v.filter((x): x is string => typeof x === "string");
+  }
+  if (def.type === "CREATED_TIME" || def.type === "LAST_EDITED_TIME") return typeof v === "string" ? [v.slice(0, 10)] : [];
+  const t = valueText(def, v);
+  return t ? [t] : [];
 }
 
 const COLOR_CYCLE: OptionColor[] = ["blue", "green", "orange", "purple", "pink", "yellow", "red", "brown", "gray"];
@@ -337,7 +416,24 @@ export function validateConfig(type: PropertyType, raw: unknown): PropertyConfig
       .filter((o) => o.name && !seen.has(o.id) && seen.add(o.id))
       .slice(0, LIMITS.options);
   }
-  if (type === "NUMBER") out.numberFormat = (NUMBER_FORMATS as readonly string[]).includes(c.numberFormat ?? "") ? c.numberFormat : "number";
+  if (type === "NUMBER" || type === "ROLLUP" || type === "FORMULA") {
+    const f = (NUMBER_FORMATS as readonly string[]).includes(c.numberFormat ?? "") ? c.numberFormat : undefined;
+    if (f || type === "NUMBER") out.numberFormat = f ?? "number";
+  }
+  const token = (v: unknown) => (typeof v === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : null);
+  if (type === "RELATION") {
+    const r = (c.relation ?? {}) as Partial<RelationConfig>;
+    const databaseId = token(r.databaseId);
+    if (databaseId) out.relation = { databaseId, limit: r.limit === "one" ? "one" : "many", pairedId: token(r.pairedId), primary: r.primary !== false };
+  }
+  if (type === "ROLLUP") {
+    const r = (c.rollup ?? {}) as Partial<RollupConfig>;
+    const relationId = token(r.relationId);
+    const targetId = token(r.targetId);
+    if (relationId && targetId) out.rollup = { relationId, targetId, fn: typeof r.fn === "string" ? r.fn.slice(0, 40) : "count_all" };
+  }
+  if (type === "FORMULA") out.formula = { expression: typeof c.formula?.expression === "string" ? c.formula.expression.slice(0, 1000) : "" };
+  if ((type === "ROLLUP" || type === "FORMULA") && (RESULT_TYPES as readonly string[]).includes(c.resultType ?? "")) out.resultType = c.resultType;
   if (type === "DATE" && c.range) out.range = true;
   if (c.default !== undefined && c.default !== null && !COMPUTED_TYPES.includes(type) && type !== "TITLE") {
     try {

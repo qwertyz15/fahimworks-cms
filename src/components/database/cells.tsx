@@ -1,14 +1,15 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Check, FileText, Link2, Loader2, Mail, Phone, Plus, Trash2, Upload, X } from "lucide-react";
+import { AlertTriangle, Check, FileText, Link2, Loader2, Mail, Phone, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { STATUS_GROUPS, formatNumber, newId, type DateValue, type FileValue, type OptionColor, type PropertyDef, type PropertyValue, type SelectOption } from "@/lib/db-properties";
+import { STATUS_GROUPS, behavesAs, formatNumber, isComputedError, isResultProp, newId, type DateValue, type FileValue, type OptionColor, type PropertyDef, type PropertyValue, type SelectOption } from "@/lib/db-properties";
 import { uploadFile, kindOf } from "@/components/editor/upload";
 import type { EditorUploadConfig } from "@/components/editor/rich-editor";
 import { OPTION_CHIP, OPTION_DOT } from "./colors";
 import type { Person, Row } from "./types";
+import { RelationChips, RelationEditor } from "./relation-editor";
 
 const dateFmt = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" });
 const timeFmt = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
@@ -28,6 +29,7 @@ export function ValueDisplay({ def, value, row, people, wrap }: { def: PropertyD
   const empty = <span className="text-muted-foreground/40">—</span>;
   if (def.type === "CREATED_TIME") return row ? <span className="text-muted-foreground">{timeFmt.format(new Date(row.createdAt))}</span> : empty;
   if (def.type === "LAST_EDITED_TIME") return row ? <span className="text-muted-foreground">{timeFmt.format(new Date(row.updatedAt))}</span> : empty;
+  if (isResultProp(def)) return <ResultDisplay def={def} value={value} wrap={wrap} />;
   if (def.type === "CHECKBOX")
     return (
       <span className={cn("inline-flex size-4 items-center justify-center rounded border", value ? "border-primary bg-primary text-primary-foreground" : "border-input bg-surface")} aria-label={value ? "Checked" : "Not checked"} role="img">
@@ -77,6 +79,8 @@ export function ValueDisplay({ def, value, row, people, wrap }: { def: PropertyD
           ))}
         </span>
       );
+    case "RELATION":
+      return <RelationChips ids={value as string[]} wrap={wrap} />;
     case "FILES":
       return (
         <span className="flex gap-1 overflow-hidden">
@@ -90,6 +94,51 @@ export function ValueDisplay({ def, value, row, people, wrap }: { def: PropertyD
     default:
       return <span className={wrap ? "whitespace-pre-wrap" : "truncate"}>{String(value)}</span>;
   }
+}
+
+/** A rollup / formula result, shown as its result type; errors show ⚠ with the message. */
+function ResultDisplay({ def, value, wrap }: { def: PropertyDef; value: PropertyValue | undefined; wrap?: boolean }) {
+  if (isComputedError(value))
+    return (
+      <span className="inline-flex items-center gap-1 truncate text-xs text-amber-600 dark:text-amber-400" title={value.error} data-formula-error>
+        <AlertTriangle className="size-3.5 shrink-0" /> <span className="truncate">{value.error}</span>
+      </span>
+    );
+  const type = behavesAs(def);
+  if (type === "CHECKBOX")
+    return (
+      <span className={cn("inline-flex size-4 items-center justify-center rounded border opacity-80", value ? "border-primary bg-primary text-primary-foreground" : "border-input bg-surface")} aria-label={value ? "Checked" : "Not checked"} role="img">
+        {value ? <Check className="size-3" strokeWidth={3} /> : null}
+      </span>
+    );
+  if (value === null || value === undefined || (Array.isArray(value) && value.length === 0)) return <span className="text-muted-foreground/40">—</span>;
+  if (type === "NUMBER" && typeof value === "number") {
+    if (def.config.numberFormat === "percent" && def.type === "ROLLUP")
+      return (
+        <span className="flex w-full items-center gap-2" data-result>
+          <span className="tabular-nums">{formatNumber(value, "percent")}</span>
+          <span className="h-1.5 min-w-8 flex-1 overflow-hidden rounded-full bg-muted" aria-hidden>
+            <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.max(0, Math.min(1, value)) * 100}%` }} />
+          </span>
+        </span>
+      );
+    return <span className="tabular-nums" data-result>{formatNumber(value, def.config.numberFormat)}</span>;
+  }
+  if (type === "DATE" && typeof value === "object" && !Array.isArray(value) && "start" in value) {
+    const d = value as DateValue;
+    return <span data-result>{d.end ? `${fmtDate(d.start)} → ${fmtDate(d.end)}` : fmtDate(d.start)}</span>;
+  }
+  if (Array.isArray(value))
+    return (
+      <span className={cn("flex gap-1", wrap ? "flex-wrap" : "overflow-hidden")} data-result>
+        {(value as string[]).map((t, i) => (
+          <span key={i} className="shrink-0 truncate rounded bg-muted px-1.5 py-px text-xs">
+            {t}
+          </span>
+        ))}
+      </span>
+    );
+  return <span className={wrap ? "whitespace-pre-wrap" : "truncate"} data-result>{String(value)}</span>;
 }
 
 /** Editing UI for one value (inside a popover). `onChange(null)` clears it. */
@@ -148,6 +197,11 @@ export function ValueEditor({
           })}
         </div>
       );
+    case "RELATION":
+      return <RelationEditor def={def} value={value} onChange={onChange} onClose={onClose} />;
+    case "ROLLUP":
+    case "FORMULA":
+      return <p className="px-2 py-1.5 text-xs text-muted-foreground">Calculated automatically.</p>;
     case "FILES":
       return <FilesEditor value={(value as FileValue[] | null) ?? []} onChange={onChange} uploads={uploads} rowId={rowId} />;
     default:

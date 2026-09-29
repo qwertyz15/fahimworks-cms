@@ -6,7 +6,7 @@ import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from "@dnd-kit/utilities";
 import { Eye, EyeOff, GripVertical, Plus, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { newId, type PropertyDef } from "@/lib/db-properties";
+import { behavesAs, isResultProp, newId, type PropertyDef } from "@/lib/db-properties";
 import {
   OPERATOR_LABELS,
   RELATIVE_DATES,
@@ -21,6 +21,7 @@ import {
   type SortRule,
 } from "@/lib/db-views";
 import { TYPE_ICONS } from "./property-menu";
+import { RelationTargetPicker } from "./relation-editor";
 
 const RELATIVE_LABELS: Record<(typeof RELATIVE_DATES)[number], string> = {
   today: "Today",
@@ -49,7 +50,7 @@ export function countRules(node: FilterNode | null | undefined): number {
 
 function newRule(props: PropertyDef[]): FilterRule {
   const p = props[0]!;
-  return { kind: "rule", id: newId(), propertyId: p.id, operator: operatorsFor(p.type)[0]! };
+  return { kind: "rule", id: newId(), propertyId: p.id, operator: operatorsFor(behavesAs(p))[0]! };
 }
 
 /** Filter builder: AND/OR at the top, plus groups one level deep. */
@@ -116,14 +117,14 @@ function GroupEditor({ group, props, depth, onChange, onRemove }: { group: Filte
 
 function RuleEditor({ rule, props, onChange, onRemove }: { rule: FilterRule; props: PropertyDef[]; onChange: (r: FilterRule) => void; onRemove: () => void }) {
   const def = props.find((p) => p.id === rule.propertyId) ?? props[0]!;
-  const ops = operatorsFor(def.type);
+  const ops = operatorsFor(behavesAs(def));
   return (
     <div className="flex flex-wrap items-center gap-1" data-testid="filter-rule">
       <select
         value={def.id}
         onChange={(e) => {
           const p = props.find((x) => x.id === e.target.value)!;
-          onChange({ kind: "rule", id: rule.id, propertyId: p.id, operator: operatorsFor(p.type)[0]! });
+          onChange({ kind: "rule", id: rule.id, propertyId: p.id, operator: operatorsFor(behavesAs(p))[0]! });
         }}
         aria-label="Filter property"
         className={cn(sel, "max-w-40")}
@@ -151,7 +152,22 @@ function RuleEditor({ rule, props, onChange, onRemove }: { rule: FilterRule; pro
 
 function RuleValue({ def, rule, onChange }: { def: PropertyDef; rule: FilterRule; onChange: (r: FilterRule) => void }) {
   const set = (value: FilterRule["value"]) => onChange({ ...rule, value });
-  switch (def.type) {
+  const type = behavesAs(def);
+  // A list result holds plain text items, not option ids.
+  if (isResultProp(def) && type === "MULTI_SELECT")
+    return <input value={(rule.value as string) ?? ""} onChange={(e) => set(e.target.value)} placeholder="Item" aria-label="Value" className={cn(sel, "w-40")} />;
+  if (type === "NUMBER" && def.config.numberFormat === "percent") {
+    const n = rule.value as number | undefined;
+    return (
+      <span className="inline-flex items-center gap-1">
+        <input type="number" value={n === undefined || n === null ? "" : Math.round(n * 10000) / 100} onChange={(e) => set(e.target.value === "" ? null : Number(e.target.value) / 100)} aria-label="Value" className={cn(sel, "w-20")} />
+        <span className="text-xs text-muted-foreground">%</span>
+      </span>
+    );
+  }
+  switch (type) {
+    case "RELATION":
+      return def.config.relation ? <RelationTargetPicker databaseId={def.config.relation.databaseId} value={(rule.value as string) ?? null} onChange={(v) => set(v)} /> : null;
     case "SELECT":
     case "STATUS":
     case "MULTI_SELECT":

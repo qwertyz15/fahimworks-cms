@@ -1,7 +1,6 @@
 "use client";
 
 import { FileText, Plus } from "lucide-react";
-import { COMPUTED_TYPES } from "@/lib/db-properties";
 import { ValueDisplay } from "./cells";
 import type { ViewProps } from "./view-props";
 
@@ -18,7 +17,7 @@ export function ListView(p: ViewProps) {
               <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{row.title || <span className="text-muted-foreground/60">Untitled</span>}</span>
               <span className="hidden max-w-[60%] shrink-0 items-center gap-3 overflow-hidden text-xs sm:flex">
                 {extra
-                  .filter((d) => COMPUTED_TYPES.includes(d.type) || d.type === "CHECKBOX" || (row.values[d.id] !== undefined && row.values[d.id] !== null))
+                  .filter((d) => d.type === "CREATED_TIME" || d.type === "LAST_EDITED_TIME" || d.type === "CHECKBOX" || (row.values[d.id] !== undefined && row.values[d.id] !== null))
                   .slice(0, 4)
                   .map((d) => (
                     <span key={d.id} className="flex min-w-0 items-center">

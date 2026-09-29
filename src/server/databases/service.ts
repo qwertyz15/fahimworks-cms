@@ -9,6 +9,7 @@ import {
   PropertyValueError,
   convertValue,
   defaultConfig,
+  isResultProp,
   optionsFromTexts,
   validateConfig,
   validateValue,
@@ -22,6 +23,10 @@ import { filterWithinLimits, type DateWindow, type FilterGroup, type SortRule, t
 import { deriveFields, mediaSources, renderNotebookHtml } from "@/server/services/notebook-html";
 import { storagePublicOrigin } from "@/lib/storage";
 import { compileFilter, compileSearch, compileSorts, compileUndated, compileWindow, type CompileContext } from "./query";
+import { ROLLUP_FNS, rollupFnsFor, rollupResult, type RollupFn } from "@/lib/db-rollup";
+import { renameProp } from "@/lib/formula/engine";
+import { afterChange, patchValues, planFormulas, recomputeDatabase, refreshIfStale, toResultType } from "./compute";
+import { RelationError, createRelationProperty, deleteRelationProperty, detachPages, dropRelationsInto, relatedPages, setRelation, setTwoWay, type RelatedPage } from "./relations";
 
 /**
  * Workspace databases: every database row is a Page (Page.databaseId), with
@@ -30,6 +35,19 @@ import { compileFilter, compileSearch, compileSorts, compileUndated, compileWind
  */
 
 export class DatabaseError extends Error {}
+
+/** Relation / formula problems surface as DatabaseError (shown to the user). */
+async function friendly<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof RelationError) throw new DatabaseError(err.message);
+    throw err;
+  }
+}
+
+/** Long enough for recalculating a few thousand rows. */
+const TX = { timeout: 30_000, maxWait: 10_000 } as const;
 
 const ROLE_RANK: Record<WorkspaceRole, number> = { VIEWER: 0, EDITOR: 1, OWNER: 2 };
 
@@ -100,7 +118,8 @@ async function lastPosition(model: "property" | "view" | "page", where: { databa
 /** Title + property values + page text, for the search box. */
 export function buildSearchText(title: string, values: Record<string, PropertyValue>, defs: PropertyDef[], contentText?: string | null): string {
   const parts = [title];
-  for (const d of defs) if (values[d.id] !== undefined) parts.push(valueText(d, values[d.id]!));
+  // Results change without an edit, so they're not indexed.
+  for (const d of defs) if (values[d.id] !== undefined && !isResultProp(d)) parts.push(valueText(d, values[d.id]!));
   if (contentText) parts.push(contentText);
   return parts.filter(Boolean).join(" • ").slice(0, 20_000);
 }
@@ -109,7 +128,7 @@ function cleanValues(defs: PropertyDef[], raw: Record<string, unknown>): Record<
   const out: Record<string, PropertyValue> = {};
   for (const [id, v] of Object.entries(raw)) {
     const def = defs.find((d) => d.id === id);
-    if (!def || def.isTitle || COMPUTED_TYPES.includes(def.type)) continue;
+    if (!def || def.isTitle || COMPUTED_TYPES.includes(def.type) || def.type === "RELATION") continue;
     try {
       const clean = validateValue(def, v);
       if (clean !== null) out[id] = clean;
@@ -123,7 +142,7 @@ function cleanValues(defs: PropertyDef[], raw: Record<string, unknown>): Record<
 
 function defaultsFor(defs: PropertyDef[]): Record<string, PropertyValue> {
   const out: Record<string, PropertyValue> = {};
-  for (const d of defs) if (d.config.default !== undefined && d.config.default !== null) out[d.id] = d.config.default;
+  for (const d of defs) if (d.config.default !== undefined && d.config.default !== null && !isResultProp(d) && d.type !== "RELATION") out[d.id] = d.config.default;
   return out;
 }
 
@@ -169,7 +188,7 @@ export async function createDatabase(
     if (build) await build(tx, { databaseId: database.id, workspaceId, titleId: title.id });
     else await tx.databaseView.create({ data: { databaseId: database.id, name: "Table", type: "TABLE", position: generateKeyBetween(null, null), config: {} } });
     return database;
-  });
+   }, TX);
 }
 
 export async function updateDatabase(userId: string, id: string, patch: { title?: string; description?: string | null; icon?: string | null; coverImage?: string | null }) {
@@ -191,8 +210,12 @@ export async function setDatabaseArchived(userId: string, id: string, archived: 
 }
 
 export async function deleteDatabase(userId: string, id: string) {
-  await requireDatabase(userId, id, "OWNER");
-  await db.database.delete({ where: { id } });
+  const database = await requireDatabase(userId, id, "OWNER");
+  await db.$transaction(async (tx) => {
+    // Relations elsewhere that point here go with it (and the rollups over them recalculate).
+    await dropRelationsInto(tx, id, database.workspaceId);
+    await tx.database.delete({ where: { id } });
+  }, TX);
 }
 
 /** Copy a database's properties and views (and optionally its rows). */
@@ -213,6 +236,25 @@ export async function duplicateDatabase(userId: string, id: string, withRows: bo
       idMap.set(p.id, n.id);
     }
     const remap = (s: string) => idMap.get(s) ?? s;
+    // Relations: a self-relation points at the copy (pair kept); one to another database becomes one-way.
+    const selfRel = new Set<string>();
+    for (const p of props) {
+      const cfg = (p.config ?? {}) as PropertyConfig;
+      if (p.type === "RELATION" && cfg.relation) {
+        const self = cfg.relation.databaseId === id;
+        if (self) selfRel.add(p.id);
+        const relation = self
+          ? { ...cfg.relation, databaseId: copy.id, pairedId: cfg.relation.pairedId ? remap(cfg.relation.pairedId) : null }
+          : { ...cfg.relation, pairedId: null, primary: true };
+        await tx.databaseProperty.update({ where: { id: remap(p.id) }, data: { config: { ...cfg, relation } as unknown as Prisma.InputJsonValue } });
+      }
+      if (p.type === "ROLLUP" && cfg.rollup) {
+        const rel = props.find((x) => x.id === cfg.rollup!.relationId);
+        const self = rel && ((rel.config ?? {}) as PropertyConfig).relation?.databaseId === id;
+        const rollup = { ...cfg.rollup, relationId: remap(cfg.rollup.relationId), targetId: self ? remap(cfg.rollup.targetId) : cfg.rollup.targetId };
+        await tx.databaseProperty.update({ where: { id: remap(p.id) }, data: { config: { ...cfg, rollup } as unknown as Prisma.InputJsonValue } });
+      }
+    }
     for (const v of views) {
       const c = (v.config ?? {}) as ViewConfig;
       const cfg: ViewConfig = {
@@ -226,9 +268,11 @@ export async function duplicateDatabase(userId: string, id: string, withRows: bo
       };
       await tx.databaseView.create({ data: { databaseId: copy.id, name: v.name, type: v.type, position: v.position, config: cfg as Prisma.InputJsonValue } });
     }
+    const pageMap = new Map<string, string>();
+    const created: { id: string; values: Record<string, unknown> }[] = [];
     for (const pg of pages) {
       const values = Object.fromEntries(Object.entries((pg.values ?? {}) as Record<string, unknown>).map(([k, val]) => [remap(k), val]));
-      await tx.page.create({
+      const made = await tx.page.create({
         data: {
           workspaceId: src.workspaceId,
           databaseId: copy.id,
@@ -245,10 +289,32 @@ export async function duplicateDatabase(userId: string, id: string, withRows: bo
           createdById: userId,
           lastEditedById: userId,
         },
+        select: { id: true },
       });
+      pageMap.set(pg.id, made.id);
+      created.push({ id: made.id, values });
     }
+    // Relation values: page ids of self-relations move to the copies; then the links table.
+    const links: { propertyId: string; fromPageId: string; toPageId: string; position: number }[] = [];
+    const patches: { id: string; set: Record<string, PropertyValue>; del: string[] }[] = [];
+    for (const row of created) {
+      const set: Record<string, PropertyValue> = {};
+      for (const p of props.filter((x) => x.type === "RELATION")) {
+        const list = row.values[remap(p.id)];
+        if (!Array.isArray(list)) continue;
+        const ids = selfRel.has(p.id) ? list.map((x) => pageMap.get(x as string)).filter((x): x is string => !!x) : (list as string[]);
+        set[remap(p.id)] = ids;
+        const cfg = ((p.config ?? {}) as PropertyConfig).relation;
+        const primary = !selfRel.has(p.id) || cfg?.primary !== false;
+        if (primary) ids.forEach((to, i) => links.push({ propertyId: remap(p.id), fromPageId: row.id, toPageId: to, position: i }));
+      }
+      if (Object.keys(set).length) patches.push({ id: row.id, set, del: [] });
+    }
+    await patchValues(tx, patches);
+    if (links.length) await tx.pageRelation.createMany({ data: links, skipDuplicates: true });
+    await recomputeDatabase(tx, copy.id);
     return copy;
-  });
+  }, TX);
 }
 
 /** Everything a database page needs: the database, its properties and views. */
@@ -269,43 +335,119 @@ export async function getDatabase(userId: string, id: string) {
 
 // ── Properties ─────────────────────────────────────────────────────────────
 
-export async function addProperty(userId: string, databaseId: string, input: { name: string; type: PropertyType; config?: unknown; afterId?: string | null }) {
-  await requireDatabase(userId, databaseId);
+export interface NewRelation {
+  databaseId: string;
+  limit: "one" | "many";
+  twoWay: boolean;
+  pairedName?: string;
+}
+
+/**
+ * Check a rollup / formula config against the database and fill in its
+ * result type. Throws DatabaseError with a message for the property menu.
+ */
+async function resolveResultConfig(databaseId: string, def: PropertyDef, config: PropertyConfig, defs: PropertyDef[]): Promise<PropertyConfig> {
+  if (def.type === "ROLLUP") {
+    const r = config.rollup;
+    if (!r) return { ...config, resultType: "number" };
+    const rel = defs.find((d) => d.id === r.relationId && d.type === "RELATION");
+    if (!rel?.config.relation) throw new DatabaseError("Choose a relation for this rollup.");
+    const target = (await propertiesOf(rel.config.relation.databaseId)).find((d) => d.id === r.targetId);
+    if (!target) throw new DatabaseError("Choose a property to roll up.");
+    const fns = rollupFnsFor(target);
+    const fn = (ROLLUP_FNS as readonly string[]).includes(r.fn) && fns.includes(r.fn as RollupFn) ? (r.fn as RollupFn) : fns.includes("count_all") ? "count_all" : fns[0]!;
+    const result = rollupResult(fn, target);
+    const numberFormat = config.numberFormat ?? result.numberFormat;
+    return { ...config, rollup: { ...r, fn }, resultType: result.resultType, ...(numberFormat ? { numberFormat } : {}) };
+  }
+  if (def.type === "FORMULA") {
+    const expression = config.formula?.expression ?? "";
+    const next = defs.map((d) => (d.id === def.id ? { ...d, config: { ...d.config, formula: { expression } } } : d));
+    if (!next.some((d) => d.id === def.id)) next.push({ ...def, config: { formula: { expression } } });
+    const plan = planFormulas(next);
+    const cycle = plan.cyclic.get(def.id);
+    if (cycle) throw new DatabaseError(`Circular reference: ${cycle}`);
+    const compiled = plan.compiled.get(def.id);
+    if (expression.trim() && compiled?.issues.length) throw new DatabaseError(compiled.issues[0]!.message);
+    return { ...config, formula: { expression }, resultType: compiled && expression.trim() ? toResultType(compiled.type) : "text" };
+  }
+  return config;
+}
+
+export async function addProperty(userId: string, databaseId: string, input: { name: string; type: PropertyType; config?: unknown; afterId?: string | null; relation?: NewRelation }) {
+  const database = await requireDatabase(userId, databaseId);
   if (input.type === "TITLE") throw new DatabaseError("A database has exactly one Title property.");
   const count = await db.databaseProperty.count({ where: { databaseId } });
   if (count >= LIMITS.properties) throw new DatabaseError(`A database can have up to ${LIMITS.properties} properties.`);
   const props = sortByPosition(await db.databaseProperty.findMany({ where: { databaseId }, select: { id: true, position: true } }));
   const at = input.afterId ? props.findIndex((p) => p.id === input.afterId) : props.length - 1;
   const position = generateKeyBetween(props[at]?.position ?? null, props[at + 1]?.position ?? null);
-  const config = input.config ? validateConfig(input.type, input.config) : defaultConfig(input.type);
-  const p = await db.databaseProperty.create({
-    data: { databaseId, name: input.name.trim().slice(0, LIMITS.propertyName) || "Property", type: input.type, config: config as Prisma.InputJsonValue, position },
-  });
-  return toDef(p);
+  const name = input.name.trim().slice(0, LIMITS.propertyName) || "Property";
+  if (input.type === "RELATION") {
+    if (!input.relation) throw new DatabaseError("Pick a database to link to.");
+    const relation = input.relation;
+    return friendly(() => db.$transaction((tx) => createRelationProperty(tx, { databaseId, workspaceId: database.workspaceId, name, position, relation }), TX));
+  }
+  let config = input.config ? validateConfig(input.type, input.config) : defaultConfig(input.type);
+  if (isResultProp({ type: input.type })) config = await resolveResultConfig(databaseId, { id: "", name, type: input.type, config }, config, await propertiesOf(databaseId));
+  return db.$transaction(async (tx) => {
+    const p = await tx.databaseProperty.create({ data: { databaseId, name, type: input.type, config: config as Prisma.InputJsonValue, position } });
+    if (isResultProp({ type: input.type })) await recomputeDatabase(tx, databaseId);
+    return toDef(p);
+  }, TX);
 }
 
-export async function updateProperty(userId: string, propertyId: string, patch: { name?: string; config?: unknown }) {
+export async function updateProperty(userId: string, propertyId: string, patch: { name?: string; config?: unknown; twoWay?: boolean; pairedName?: string }) {
   const prop = await db.databaseProperty.findUniqueOrThrow({ where: { id: propertyId } });
   await requireDatabase(userId, prop.databaseId);
   const type = prop.type as PropertyType;
-  const config = patch.config !== undefined ? validateConfig(type, patch.config) : undefined;
-  // Options removed from a select: drop them from rows too.
-  if (config?.options && (type === "SELECT" || type === "STATUS" || type === "MULTI_SELECT")) {
-    const keep = config.options.map((o) => o.id);
-    if (type === "MULTI_SELECT") {
-      await db.$executeRaw`UPDATE "pages" SET "values" = jsonb_set("values", ARRAY[${prop.id}::text], COALESCE((SELECT jsonb_agg(e) FROM jsonb_array_elements_text("values" -> ${prop.id}::text) e WHERE e = ANY(${keep}::text[])), '[]'::jsonb)) WHERE "database_id" = ${prop.databaseId} AND jsonb_typeof("values" -> ${prop.id}::text) = 'array'`;
-    } else {
-      await db.$executeRaw`UPDATE "pages" SET "values" = "values" - ${prop.id}::text WHERE "database_id" = ${prop.databaseId} AND NOT (("values" ->> ${prop.id}::text) = ANY(${keep}::text[])) AND "values" ? ${prop.id}::text`;
-    }
+  const current = toDef(prop);
+  const defs = await propertiesOf(prop.databaseId);
+  let config = patch.config !== undefined ? validateConfig(type, patch.config) : undefined;
+  if (type === "RELATION" && current.config.relation) {
+    // Only the limit is the client's to change; the target and the pairing are the server's.
+    config = { ...current.config, relation: { ...current.config.relation, limit: config?.relation?.limit ?? current.config.relation.limit } };
   }
-  const updated = await db.databaseProperty.update({
-    where: { id: propertyId },
-    data: {
-      ...(patch.name !== undefined ? { name: patch.name.trim().slice(0, LIMITS.propertyName) || prop.name } : {}),
-      ...(config ? { config: config as Prisma.InputJsonValue } : {}),
-    },
-  });
-  return toDef(updated);
+  if (config && isResultProp(current)) config = await resolveResultConfig(prop.databaseId, current, config, defs);
+  const newName = patch.name !== undefined ? patch.name.trim().slice(0, LIMITS.propertyName) || prop.name : undefined;
+  return friendly(() =>
+    db.$transaction(async (tx) => {
+      // Options removed from a select: drop them from rows too.
+      if (config?.options && (type === "SELECT" || type === "STATUS" || type === "MULTI_SELECT")) {
+        const keep = config.options.map((o) => o.id);
+        if (type === "MULTI_SELECT") {
+          await tx.$executeRaw`UPDATE "pages" SET "values" = jsonb_set("values", ARRAY[${prop.id}::text], COALESCE((SELECT jsonb_agg(e) FROM jsonb_array_elements_text("values" -> ${prop.id}::text) e WHERE e = ANY(${keep}::text[])), '[]'::jsonb)) WHERE "database_id" = ${prop.databaseId} AND jsonb_typeof("values" -> ${prop.id}::text) = 'array'`;
+        } else {
+          await tx.$executeRaw`UPDATE "pages" SET "values" = "values" - ${prop.id}::text WHERE "database_id" = ${prop.databaseId} AND NOT (("values" ->> ${prop.id}::text) = ANY(${keep}::text[])) AND "values" ? ${prop.id}::text`;
+        }
+      }
+      if (type === "RELATION" && patch.twoWay !== undefined && current.config.relation) {
+        const relation = await setTwoWay(tx, { ...current, config: config ?? current.config, databaseId: prop.databaseId }, patch.twoWay, patch.pairedName);
+        config = { ...(config ?? current.config), relation };
+      }
+      // Formulas refer to properties by name: follow a rename.
+      if (newName && newName !== prop.name) {
+        for (const f of defs.filter((d) => d.type === "FORMULA" && d.config.formula?.expression.includes(prop.name))) {
+          const expression = renameProp(f.config.formula!.expression, prop.name, newName);
+          if (expression !== f.config.formula!.expression) {
+            const fc = f.id === propertyId && config ? config : f.config;
+            if (f.id === propertyId) config = { ...fc, formula: { expression } };
+            else await tx.databaseProperty.update({ where: { id: f.id }, data: { config: { ...fc, formula: { expression } } as unknown as Prisma.InputJsonValue } });
+          }
+        }
+      }
+      const updated = await tx.databaseProperty.update({
+        where: { id: propertyId },
+        data: {
+          ...(newName !== undefined ? { name: newName } : {}),
+          ...(config ? { config: config as Prisma.InputJsonValue } : {}),
+        },
+      });
+      const affectsResults = isResultProp(current) || (newName !== undefined && newName !== prop.name) || config?.options !== undefined || patch.twoWay !== undefined;
+      if (affectsResults && (config || newName)) await recomputeDatabase(tx, prop.databaseId);
+      return toDef(updated);
+    }, TX),
+  );
 }
 
 /** Change a property's type, converting every row's value. */
@@ -313,6 +455,7 @@ export async function changePropertyType(userId: string, propertyId: string, typ
   const prop = await db.databaseProperty.findUniqueOrThrow({ where: { id: propertyId } });
   await requireDatabase(userId, prop.databaseId);
   if (prop.isTitle || type === "TITLE") throw new DatabaseError("The Title property can't change type.");
+  if (prop.type === "RELATION" || type === "RELATION") throw new DatabaseError("Relations can't change type — add a new property instead.");
   const from = toDef(prop);
   if (from.type === type) return from;
   const rows = await db.page.findMany({ where: { databaseId: prop.databaseId }, select: { id: true, values: true } });
@@ -329,19 +472,22 @@ export async function changePropertyType(userId: string, propertyId: string, typ
     const base = from.config.options?.length ? from.config.options.map((o) => ({ ...o, ...(type === "STATUS" ? { group: o.group ?? "todo" } : {}) })) : type === "STATUS" ? (config.options ?? []) : [];
     config = { options: optionsFromTexts(texts, base).map((o) => (type === "STATUS" ? { ...o, group: o.group ?? "todo" } : { id: o.id, name: o.name, color: o.color })) };
   }
+  if (isResultProp({ type })) config = { ...(type === "FORMULA" ? { formula: { expression: "" } } : {}), resultType: type === "ROLLUP" ? "number" : "text" };
   const to: PropertyDef = { ...from, type, config };
   await db.$transaction(async (tx) => {
     for (const r of rows) {
       const v = current(r);
       if (v === null) continue;
-      const next = convertValue(from, to, v);
+      // Results are recalculated below; they start empty.
+      const next = isResultProp(to) ? null : convertValue(from, to, v);
       const values = { ...((r.values ?? {}) as Record<string, PropertyValue>) };
       if (next === null) delete values[prop.id];
       else values[prop.id] = next;
       await tx.page.update({ where: { id: r.id }, data: { values: values as Prisma.InputJsonValue } });
     }
     await tx.databaseProperty.update({ where: { id: propertyId }, data: { type: type as DbPropertyType, config: config as Prisma.InputJsonValue } });
-  });
+    await recomputeDatabase(tx, prop.databaseId);
+  }, TX);
   return to;
 }
 
@@ -349,10 +495,13 @@ export async function deleteProperty(userId: string, propertyId: string) {
   const prop = await db.databaseProperty.findUniqueOrThrow({ where: { id: propertyId } });
   await requireDatabase(userId, prop.databaseId);
   if (prop.isTitle) throw new DatabaseError("The Title property can't be deleted.");
-  await db.$transaction([
-    db.$executeRaw`UPDATE "pages" SET "values" = "values" - ${prop.id}::text WHERE "database_id" = ${prop.databaseId}`,
-    db.databaseProperty.delete({ where: { id: propertyId } }),
-  ]);
+  await db.$transaction(async (tx) => {
+    if (prop.type === "RELATION") return deleteRelationProperty(tx, { ...toDef(prop), databaseId: prop.databaseId });
+    await tx.$executeRaw`UPDATE "pages" SET "values" = "values" - ${prop.id}::text WHERE "database_id" = ${prop.databaseId}`;
+    await tx.databaseProperty.delete({ where: { id: propertyId } });
+    // Formulas reading it (here) and rollups reading it (elsewhere) now show an error.
+    await recomputeDatabase(tx, prop.databaseId);
+  }, TX);
 }
 
 /** Move a property between two neighbours (ids, or null for an end). */
@@ -423,6 +572,14 @@ export interface RowData {
   updatedAt: string;
 }
 
+/** A write's result: the row, plus other rows whose values changed (rollups, paired relations). */
+export interface RowWrite extends RowData {
+  touched: string[];
+  related: Record<string, RelatedPage>;
+}
+
+export type { RelatedPage };
+
 export const ROW_PAGE_SIZE = 500;
 
 /** Rows for a view: filtered, sorted and searched in SQL. */
@@ -442,11 +599,14 @@ export async function queryRows(
     /** Only rows without a value for this date property ("No date" tray). */
     undatedBy?: string | null;
   },
-): Promise<{ rows: RowData[]; total: number }> {
+): Promise<{ rows: RowData[]; total: number; related: Record<string, RelatedPage> }> {
   await requireDatabase(userId, databaseId, "VIEWER");
   if (!filterWithinLimits(opts.filter)) throw new DatabaseError("That filter is too large.");
+  const today = /^\d{4}-\d{2}-\d{2}$/.test(opts.today) ? opts.today : new Date().toISOString().slice(0, 10);
+  // Formulas using today() / now(): recalculated on the first read of the day.
+  await refreshIfStale(databaseId, today);
   const props = await propertiesOf(databaseId);
-  const ctx: CompileContext = { props: new Map(props.map((p) => [p.id, p])), today: /^\d{4}-\d{2}-\d{2}$/.test(opts.today) ? opts.today : new Date().toISOString().slice(0, 10) };
+  const ctx: CompileContext = { props: new Map(props.map((p) => [p.id, p])), today };
   const windowSql = opts.window ? compileWindow(opts.window, ctx) : null;
   const undatedSql = opts.undatedBy ? compileUndated(opts.undatedBy, ctx) : null;
   const extra = [windowSql, undatedSql].filter((x): x is Prisma.Sql => x !== null);
@@ -461,11 +621,24 @@ export async function queryRows(
       LIMIT ${limit} OFFSET ${offset}`,
     db.$queryRaw<{ n: bigint }[]>`SELECT count(*) AS n FROM "pages" p WHERE ${where}`,
   ]);
-  return {
-    rows: rows.map((r) => ({ id: r.id, title: r.title, icon: r.icon, thumbnail: r.thumbnail, values: r.values ?? {}, position: r.position, createdAt: r.created_at.toISOString(), updatedAt: r.updated_at.toISOString() })),
-    total: Number(count[0]?.n ?? 0),
-  };
+  const out = rows.map((r) => ({ id: r.id, title: r.title, icon: r.icon, thumbnail: r.thumbnail, values: r.values ?? {}, position: r.position, createdAt: r.created_at.toISOString(), updatedAt: r.updated_at.toISOString() }));
+  return { rows: out, total: Number(count[0]?.n ?? 0), related: await relatedPages(db, props, out) };
 }
+
+/** Re-read a row after a write (results and mirrors may have changed) with its related pages. */
+async function rowWrite(pageId: string, defs: PropertyDef[], touched: Set<string>): Promise<RowWrite> {
+  const page = await db.page.findUniqueOrThrow({ where: { id: pageId } });
+  const row = toRow(page);
+  touched.delete(pageId);
+  return { ...row, touched: [...touched].slice(0, 2000), related: await relatedPages(db, defs, [row]) };
+}
+
+const relationPatch = (defs: PropertyDef[], values: Record<string, unknown>) =>
+  Object.entries(values).flatMap(([id, v]) => {
+    const def = defs.find((d) => d.id === id && d.type === "RELATION");
+    if (!def) return [];
+    return [{ def, ids: Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [] }];
+  });
 
 function toRow(p: { id: string; title: string; icon: string | null; thumbnail?: string | null; values: Prisma.JsonValue; position: string; createdAt: Date; updatedAt: Date }): RowData {
   return { id: p.id, title: p.title, icon: p.icon, thumbnail: p.thumbnail ?? null, values: (p.values ?? {}) as Record<string, PropertyValue>, position: p.position, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() };
@@ -481,38 +654,73 @@ export async function createRow(userId: string, databaseId: string, input: { tit
   const pos = (id?: string | null) => (id ? (neighbours.find((n) => n.id === id)?.position ?? null) : null);
   const position =
     input.afterId || input.beforeId ? generateKeyBetween(pos(input.afterId), pos(input.beforeId)) : generateKeyBetween(await lastPosition("page", { databaseId }), null);
-  const page = await db.page.create({
-    data: { workspaceId: database.workspaceId, databaseId, title, values: values as Prisma.InputJsonValue, searchText: buildSearchText(title, values, defs), position, createdById: userId, lastEditedById: userId },
-  });
-  await db.database.update({ where: { id: databaseId }, data: { updatedAt: new Date() } });
-  return toRow(page);
+  const relations = relationPatch(defs, input.values ?? {});
+  const touched = new Set<string>();
+  const page = await friendly(() =>
+    db.$transaction(async (tx) => {
+      const page = await tx.page.create({
+        data: { workspaceId: database.workspaceId, databaseId, title, values: values as Prisma.InputJsonValue, searchText: buildSearchText(title, values, defs), position, createdById: userId, lastEditedById: userId },
+      });
+      let current = page;
+      for (const r of relations) {
+        for (const id of await setRelation(tx, current, r.def, r.ids)) touched.add(id);
+        current = await tx.page.findUniqueOrThrow({ where: { id: page.id } });
+      }
+      // Its formulas (and anything already reading it).
+      for (const id of await afterChange(tx, databaseId, [page.id], new Set(Object.keys(values)))) touched.add(id);
+      await tx.database.update({ where: { id: databaseId }, data: { updatedAt: new Date() } });
+      return page;
+    }, TX),
+  );
+  return rowWrite(page.id, defs, touched);
 }
 
 /** Set property values (and/or the title) on one row. `null` clears a value. */
-export async function updateRow(userId: string, pageId: string, patch: { title?: string; icon?: string | null; values?: Record<string, unknown> }) {
+export async function updateRow(userId: string, pageId: string, patch: { title?: string; icon?: string | null; values?: Record<string, unknown> }): Promise<RowWrite> {
   const page = await requirePage(userId, pageId);
   if (!page.databaseId) throw new DatabaseError("Not a database row.");
-  const defs = await propertiesOf(page.databaseId);
+  const databaseId = page.databaseId;
+  const defs = await propertiesOf(databaseId);
   const values = { ...((page.values ?? {}) as Record<string, PropertyValue>) };
+  const changed = new Set<string>();
   for (const [id, v] of Object.entries(patch.values ?? {})) {
     const def = defs.find((d) => d.id === id);
-    if (!def || def.isTitle || COMPUTED_TYPES.includes(def.type)) continue;
+    if (!def || def.isTitle || COMPUTED_TYPES.includes(def.type) || def.type === "RELATION") continue;
     const clean = cleanValues(defs, { [id]: v })[id];
     if (clean === undefined) delete values[id];
     else values[id] = clean;
+    changed.add(id);
   }
   const title = patch.title !== undefined ? patch.title.slice(0, LIMITS.title) : page.title;
-  const updated = await db.page.update({
-    where: { id: pageId },
-    data: {
-      title,
-      ...(patch.icon !== undefined ? { icon: patch.icon?.slice(0, 16) || null } : {}),
-      values: values as Prisma.InputJsonValue,
-      searchText: buildSearchText(title, values, defs, page.contentText),
-      lastEditedById: userId,
-    },
-  });
-  return toRow(updated);
+  if (title !== page.title) {
+    const titleDef = defs.find((d) => d.isTitle);
+    if (titleDef) changed.add(titleDef.id);
+  }
+  const relations = relationPatch(defs, patch.values ?? {});
+  const touched = new Set<string>();
+  await friendly(() =>
+    db.$transaction(async (tx) => {
+      const updated = await tx.page.update({
+        where: { id: pageId },
+        data: {
+          title,
+          ...(patch.icon !== undefined ? { icon: patch.icon?.slice(0, 16) || null } : {}),
+          values: values as Prisma.InputJsonValue,
+          searchText: buildSearchText(title, values, defs, page.contentText),
+          lastEditedById: userId,
+        },
+      });
+      let current = updated;
+      for (const r of relations) {
+        for (const id of await setRelation(tx, current, r.def, r.ids)) touched.add(id);
+        current = await tx.page.findUniqueOrThrow({ where: { id: pageId } });
+      }
+      if (changed.size) for (const id of await afterChange(tx, databaseId, [pageId], changed)) touched.add(id);
+      // An edit changes "last edited": formulas reading it too.
+      else if (!relations.length) for (const id of await afterChange(tx, databaseId, [pageId], new Set())) touched.add(id);
+    }, TX),
+  );
+  return rowWrite(pageId, defs, touched);
 }
 
 /** Set one property on many rows at once (bulk edit). */
@@ -539,23 +747,39 @@ export async function moveRow(userId: string, pageId: string, input: { beforeId?
 }
 
 export async function setRowsArchived(userId: string, databaseId: string, pageIds: string[], archived: boolean) {
-  await requireDatabase(userId, databaseId);
-  const r = await db.page.updateMany({ where: { id: { in: pageIds.slice(0, 1000) }, databaseId }, data: { archivedAt: archived ? new Date() : null } });
-  return r.count;
+  const database = await requireDatabase(userId, databaseId);
+  const ids = pageIds.slice(0, 1000);
+  return db.$transaction(async (tx) => {
+    const r = await tx.page.updateMany({ where: { id: { in: ids }, databaseId }, data: { archivedAt: archived ? new Date() : null } });
+    // Rollups leave archived rows out.
+    await detachPages(tx, databaseId, database.workspaceId, ids, "archive");
+    return r.count;
+  }, TX);
 }
 
 export async function deleteRows(userId: string, databaseId: string, pageIds: string[]) {
-  await requireDatabase(userId, databaseId);
-  const r = await db.page.deleteMany({ where: { id: { in: pageIds.slice(0, 1000) }, databaseId } });
-  return r.count;
+  const database = await requireDatabase(userId, databaseId);
+  const ids = (await db.page.findMany({ where: { id: { in: pageIds.slice(0, 1000) }, databaseId }, select: { id: true } })).map((p) => p.id);
+  return db.$transaction(async (tx) => {
+    await detachPages(tx, databaseId, database.workspaceId, ids, "delete");
+    const r = await tx.page.deleteMany({ where: { id: { in: ids }, databaseId } });
+    return r.count;
+  }, TX);
 }
 
 export async function duplicateRow(userId: string, pageId: string) {
   const page = await requirePage(userId, pageId);
   if (!page.databaseId) throw new DatabaseError("Not a database row.");
-  const next = await db.page.findMany({ where: { databaseId: page.databaseId, archivedAt: null }, select: { position: true } });
+  const databaseId = page.databaseId;
+  const next = await db.page.findMany({ where: { databaseId, archivedAt: null }, select: { position: true } });
   const after = sortByPosition(next).find((n) => n.position > page.position)?.position ?? null;
-  const copy = await db.page.create({
+  const defs = await propertiesOf(databaseId);
+  // Relations are re-made through setRelation, so both sides and the links agree.
+  const values = { ...((page.values ?? {}) as Record<string, PropertyValue>) };
+  const relations = defs.filter((d) => d.type === "RELATION" && Array.isArray(values[d.id])).map((d) => ({ def: d, ids: values[d.id] as string[] }));
+  for (const r of relations) delete values[r.def.id];
+  return db.$transaction(async (tx) => {
+  const copy = await tx.page.create({
     data: {
       workspaceId: page.workspaceId,
       databaseId: page.databaseId,
@@ -566,14 +790,34 @@ export async function duplicateRow(userId: string, pageId: string) {
       body: page.body ?? Prisma.JsonNull,
       contentHtml: page.contentHtml,
       contentText: page.contentText,
-      values: page.values ?? {},
+      values: values as Prisma.InputJsonValue,
       searchText: page.searchText,
       position: generateKeyBetween(page.position, after),
       createdById: userId,
       lastEditedById: userId,
     },
   });
-  return toRow(copy);
+  let current = copy;
+  for (const r of relations) {
+    await setRelation(tx, current, r.def, r.ids);
+    current = await tx.page.findUniqueOrThrow({ where: { id: copy.id } });
+  }
+  await afterChange(tx, databaseId, [copy.id], new Set());
+  return toRow(await tx.page.findUniqueOrThrow({ where: { id: copy.id } }));
+  }, TX);
+}
+
+/** Rows of a database by title (relation picker); `ids` fetches specific rows instead. */
+export async function searchRows(userId: string, databaseId: string, q: string, ids?: string[]) {
+  await requireDatabase(userId, databaseId, "VIEWER");
+  const t = q.trim().slice(0, 200);
+  const rows = await db.page.findMany({
+    where: { databaseId, archivedAt: null, ...(ids ? { id: { in: ids } } : t ? { title: { contains: t, mode: "insensitive" } } : {}) },
+    orderBy: ids ? undefined : { updatedAt: "desc" },
+    take: ids ? 500 : 30,
+    select: { id: true, title: true, icon: true },
+  });
+  return rows;
 }
 
 // ── Row pages ──────────────────────────────────────────────────────────────
@@ -581,7 +825,8 @@ export async function duplicateRow(userId: string, pageId: string) {
 export async function getPage(userId: string, pageId: string) {
   const page = await requirePage(userId, pageId, "VIEWER");
   const database = page.databaseId ? await getDatabase(userId, page.databaseId) : null;
-  return { page, database };
+  const related = database ? await relatedPages(db, database.properties, [{ values: (page.values ?? {}) as Record<string, PropertyValue> }]) : {};
+  return { page, database, related };
 }
 
 /** Save a row page's body (same HTML pipeline as Notebook entries). */

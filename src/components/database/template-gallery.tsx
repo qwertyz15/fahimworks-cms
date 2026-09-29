@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, Table2 } from "lucide-react";
+import { Link2, Loader2, Plus, Table2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { TEMPLATES, TEMPLATE_CATEGORIES, type TemplateCategory } from "@/lib/db-templates";
+import { PACKS, TEMPLATES, TEMPLATE_CATEGORIES, type TemplateCategory } from "@/lib/db-templates";
 import { TYPE_LABELS } from "@/lib/db-properties";
 import { createDatabaseAction } from "@/server/actions/databases";
 import { Button } from "@/components/ui/button";
@@ -26,8 +26,9 @@ export function NewDatabaseButton() {
     setOpen(false);
     router.push(`/dashboard/databases/${r.data.id}`);
   };
-  const cats = TEMPLATE_CATEGORIES.filter((c) => TEMPLATES.some((t) => t.category === c));
+  const cats = TEMPLATE_CATEGORIES.filter((c) => TEMPLATES.some((t) => t.category === c) || PACKS.some((p) => p.category === c));
   const shown = TEMPLATES.filter((t) => category === "All" || t.category === category);
+  const packs = PACKS.filter((p) => category === "All" || p.category === category);
   return (
     <>
       <Button onClick={() => setOpen(true)}>
@@ -50,6 +51,21 @@ export function NewDatabaseButton() {
                 <span className="block text-xs text-muted-foreground">A table with a Name column.</span>
               </span>
             </button>
+            {packs.map((p) => (
+              <button key={p.key} type="button" onClick={() => void create(p.key)} disabled={busy !== null} className="flex items-start gap-3 rounded-lg border p-3 text-left hover:border-primary/50" data-testid={`template-${p.key}`}>
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-lg">{busy === p.key ? <Loader2 className="size-4 animate-spin" /> : p.icon}</span>
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5 text-sm font-medium">
+                    {p.name}
+                    <span className="inline-flex items-center gap-0.5 rounded bg-primary/10 px-1 py-px text-[10px] font-medium text-primary">
+                      <Link2 className="size-2.5" /> {p.databases.length} linked
+                    </span>
+                  </span>
+                  <span className="block text-xs text-muted-foreground">{p.description}</span>
+                  <span className="mt-1 block truncate text-[11px] text-muted-foreground/80">{p.databases.map((d) => `${d.icon} ${d.name}`).join(" ↔ ")}</span>
+                </span>
+              </button>
+            ))}
             {shown.map((t) => (
               <button key={t.key} type="button" onClick={() => void create(t.key)} disabled={busy !== null} className="flex items-start gap-3 rounded-lg border p-3 text-left hover:border-primary/50" data-testid={`template-${t.key}`}>
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-lg">{busy === t.key ? <Loader2 className="size-4 animate-spin" /> : t.icon}</span>

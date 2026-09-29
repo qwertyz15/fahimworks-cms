@@ -22,7 +22,7 @@ export default async function DatabasePage({ params, searchParams }: PageProps<"
   }
   const view = data.views.find((v) => v.id === sp.view) ?? data.views[0]!;
   // The server's "today" is fine for the first render; the client re-queries with its own date.
-  const { rows, total } = await queryRows(user.id, id, { filter: view.config.filter ?? null, sorts: view.config.sorts ?? [], today: localToday() });
+  const { rows, total, related } = await queryRows(user.id, id, { filter: view.config.filter ?? null, sorts: view.config.sorts ?? [], today: localToday() });
 
   return (
     <DatabaseScreen
@@ -33,6 +33,7 @@ export default async function DatabasePage({ params, searchParams }: PageProps<"
       people={data.people}
       rows={rows}
       total={total}
+      related={related}
       activeViewId={view.id}
       articleBaseUrl={writtenPostUrl("")}
       peekId={typeof sp.p === "string" && /^[a-z0-9]{8,40}$/.test(sp.p) ? sp.p : null}

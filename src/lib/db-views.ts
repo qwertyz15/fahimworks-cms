@@ -91,6 +91,12 @@ export function operatorsFor(type: PropertyType): Operator[] {
       return ["checked", "unchecked"];
     case "FILES":
       return ["is_empty", "is_not_empty"];
+    case "RELATION":
+      return ["contains", "not_contains", "is_empty", "is_not_empty"];
+    case "ROLLUP":
+    case "FORMULA":
+      // Callers pass behavesAs(def); these only show up for unconfigured results.
+      return ["is_empty", "is_not_empty"];
   }
 }
 

@@ -7,7 +7,7 @@ import { ArrowDownUp, ArrowLeft, Archive, ArchiveRestore, CalendarDays, Copy, Fi
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { localToday } from "@/lib/dates";
-import { COMPUTED_TYPES, type PropertyConfig, type PropertyType, type PropertyValue } from "@/lib/db-properties";
+import { COMPUTED_TYPES, isResultProp, type PropertyConfig, type PropertyType, type PropertyValue } from "@/lib/db-properties";
 import { ENABLED_VIEW_TYPES, type DateWindow, type FilterGroup, type SortRule, type ViewConfig, type ViewType } from "@/lib/db-views";
 import {
   addPropertyAction,
@@ -25,6 +25,7 @@ import {
   duplicateRowAction,
   moveRowAction,
   queryRowsAction,
+  databasePropertiesAction,
   updateDatabaseAction,
   updatePropertyAction,
   updateRowAction,
@@ -35,7 +36,9 @@ import { Dialog } from "@/components/ui/dialog";
 import { uploadImage } from "@/components/editor/upload";
 import type { EditorUploadConfig } from "@/components/editor/rich-editor";
 import { Popover, PopoverButton } from "./popover";
-import { AddPropertyMenu, PropertyMenu } from "./property-menu";
+import { AddPropertyMenu, PropertyMenu, type RelationSetup } from "./property-menu";
+import { RelatedProvider, type RelatedPage } from "./relation-editor";
+import { FormulaDialog } from "./formula-dialog";
 import { FilterMenu, PropertiesMenu, SortMenu, countRules } from "./toolbar-menus";
 import { ValueEditor } from "./cells";
 import { TableView } from "./table-view";
@@ -73,6 +76,8 @@ export function DatabaseScreen(init: {
   people: Person[];
   rows: Row[];
   total: number;
+  /** Pages the rows' relations link to. */
+  related: Record<string, RelatedPage>;
   activeViewId: string;
   uploads: EditorUploadConfig;
   articleBaseUrl: string;
@@ -87,6 +92,9 @@ export function DatabaseScreen(init: {
   const [activeId, setActiveId] = useState(init.activeViewId);
   const [rows, setRows] = useState(init.rows);
   const [total, setTotal] = useState(init.total);
+  const [related, setRelated] = useState(init.related);
+  const remember = useCallback((more: Record<string, RelatedPage>) => setRelated((cur) => ({ ...cur, ...more })), []);
+  const [formulaFor, setFormulaFor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [selection, setSelection] = useState<Set<string>>(new Set());
@@ -114,8 +122,9 @@ export function DatabaseScreen(init: {
       const data = res.data;
       setRows((cur) => (offset ? [...cur, ...data.rows.filter((r) => !cur.some((c) => c.id === r.id))] : data.rows));
       setTotal(data.total);
+      remember(data.related);
     },
-    [dbId],
+    [dbId, remember],
   );
 
   // Re-query when the search text changes (debounced).
@@ -146,6 +155,13 @@ export function DatabaseScreen(init: {
     setRows((cur) => cur.map((r) => (r.id === id ? optimistic : r)));
     const res = await act(updateRowAction({ id, ...patch }));
     setRows((cur) => cur.map((r) => (r.id === id ? (res?.data ?? before) : r)));
+    if (res?.data) afterWrite(res.data);
+  };
+
+  /** A write changed other rows too (rollups, the other side of a relation): refresh if any are shown. */
+  const afterWrite = (w: { related: Record<string, RelatedPage>; touched: string[] }) => {
+    remember(w.related);
+    if (w.touched.some((t) => rows.some((r) => r.id === t))) void query(view, search, 0);
   };
 
   const createRow: ViewProps["onCreateRow"] = async (initRow) => {
@@ -159,6 +175,7 @@ export function DatabaseScreen(init: {
     if (!row) return null;
     setRows((cur) => [...cur, row]);
     setTotal((t) => t + 1);
+    afterWrite(row);
     return row;
   };
 
@@ -191,7 +208,11 @@ export function DatabaseScreen(init: {
     window.history.replaceState(null, "", urlFor(activeId, null));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- urlFor only uses dbId
   }, [activeId, dbId]);
-  const onPeekRowChange = useCallback((row: Row) => setRows((cur) => cur.map((r) => (r.id === row.id ? { ...row, position: r.position } : r))), []);
+  const onPeekRowChange = (row: Row & { related?: Record<string, RelatedPage>; touched?: string[] }) => {
+    setRows((cur) => cur.map((r) => (r.id === row.id ? { ...row, position: r.position } : r)));
+    // Editing a linked page (e.g. a task opened from a project) can change rows shown here.
+    if (row.related && row.touched) afterWrite({ related: row.related, touched: row.touched });
+  };
 
   // Calendar / timeline report their visible range; reload when it changes.
   const viewRef = useRef(view);
@@ -280,7 +301,19 @@ export function DatabaseScreen(init: {
   const updateConfig = async (def: PropertyDef, config: PropertyConfig) => {
     const saved = (await act(updatePropertyAction({ id: def.id, config: config as Record<string, unknown> })))?.data;
     if (saved) setProp(saved);
+    // Results were recalculated for every row.
+    if (saved && isResultProp(saved)) void query(view, search);
     return saved ?? null;
+  };
+  const reloadProps = async () => {
+    const r = await databasePropertiesAction({ id: dbId });
+    if (r.ok && r.data) setProps(r.data.properties);
+  };
+  const setTwoWay = async (def: PropertyDef, on: boolean, pairedName?: string) => {
+    const saved = (await act(updatePropertyAction({ id: def.id, twoWay: on, pairedName })))?.data;
+    if (saved) setProp(saved);
+    // A self-relation's reverse property lives here too.
+    if (saved && saved.config.relation?.databaseId === dbId) await reloadProps();
   };
   const updateOptions: ViewProps["onUpdateOptions"] = async (propertyId, options) => {
     const def = props.find((p) => p.id === propertyId);
@@ -289,12 +322,18 @@ export function DatabaseScreen(init: {
     if (saved && options.length < (def.config.options?.length ?? 0)) void query(view, search);
     return saved?.config.options ?? null;
   };
-  const addProperty = async (type: PropertyType, name: string) => {
+  const addProperty = async (type: PropertyType, name: string, relation?: RelationSetup) => {
+    const anchor = adding;
     setAdding(null);
-    const def = (await act(addPropertyAction({ databaseId: dbId, name, type })))?.data;
+    const def = (await act(addPropertyAction({ databaseId: dbId, name, type, relation })))?.data;
     if (!def) return;
     setProps((cur) => [...cur, def]);
     if (view.config.order?.length) updateView({ order: [...view.config.order, def.id] });
+    // Straight on to setting it up.
+    if (type === "FORMULA") setFormulaFor(def.id);
+    if (type === "ROLLUP" && anchor?.isConnected) setMenu({ def, anchor });
+    // A self-relation adds its reverse property here as well.
+    if (type === "RELATION" && relation?.twoWay && relation.databaseId === dbId) await reloadProps();
   };
   const changeType = async (def: PropertyDef, type: PropertyType) => {
     const saved = (await act(changePropertyTypeAction({ id: def.id, type })))?.data;
@@ -416,6 +455,7 @@ export function DatabaseScreen(init: {
   const groupable = ordered.filter((p) => p.type === "SELECT" || p.type === "STATUS");
 
   return (
+    <RelatedProvider value={{ related, remember, open: openRow }}>
     <div className="-mx-4 -mt-6 sm:-mx-6 lg:-mx-8 lg:-mt-8">
       {/* Cover */}
       {meta.coverImage ? (
@@ -617,6 +657,7 @@ export function DatabaseScreen(init: {
         <Popover anchor={menu.anchor} open onClose={() => setMenu(null)} label={`${menu.def.name} property`}>
           <PropertyMenu
             def={props.find((p) => p.id === menu.def.id) ?? menu.def}
+            allProps={ordered}
             people={init.people}
             uploads={init.uploads}
             onClose={() => setMenu(null)}
@@ -627,13 +668,15 @@ export function DatabaseScreen(init: {
               hide: () => updateView({ hidden: [...hidden, menu.def.id] }),
               remove: () => void removeProperty(menu.def),
               sort: (direction) => updateView({ sorts: [{ propertyId: menu.def.id, direction }, ...(view.config.sorts ?? []).filter((s) => s.propertyId !== menu.def.id)] }),
+              editFormula: () => setFormulaFor(menu.def.id),
+              setTwoWay: (on, pairedName) => setTwoWay(props.find((p) => p.id === menu.def.id) ?? menu.def, on, pairedName),
             }}
           />
         </Popover>
       )}
       {adding && (
         <Popover anchor={adding} open onClose={() => setAdding(null)} label="New property" placement="bottom-end">
-          <AddPropertyMenu onAdd={(type, name) => void addProperty(type, name)} />
+          <AddPropertyMenu databaseId={dbId} onAdd={(type, name, relation) => void addProperty(type, name, relation)} />
         </Popover>
       )}
       {bulkProp && (
@@ -650,6 +693,20 @@ export function DatabaseScreen(init: {
             onUpdateOptions={(o) => updateOptions(bulkProp.def.id, o)}
           />
         </Popover>
+      )}
+
+      {formulaFor && props.some((p) => p.id === formulaFor) && (
+        <FormulaDialog
+          key={formulaFor}
+          def={props.find((p) => p.id === formulaFor)!}
+          props={ordered}
+          sample={rows[0] ?? null}
+          onClose={() => setFormulaFor(null)}
+          onSave={async (expression) => {
+            const def = props.find((p) => p.id === formulaFor)!;
+            return (await updateConfig(def, { ...def.config, formula: { expression } })) !== null;
+          }}
+        />
       )}
 
       <Dialog
@@ -671,6 +728,7 @@ export function DatabaseScreen(init: {
         }
       />
     </div>
+    </RelatedProvider>
   );
 }
 

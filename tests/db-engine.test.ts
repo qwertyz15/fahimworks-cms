@@ -163,13 +163,16 @@ describe.skipIf(!up)("database engine (Postgres)", async () => {
       const d = await createFromTemplate(userId, t.key, today);
       const full = await svc.getDatabase(userId, d.id);
       expect(full.properties.filter((p) => p.isTitle)).toHaveLength(1);
-      expect(full.properties).toHaveLength(t.properties.length + 1);
+      // A two-way self-relation adds its reverse property too.
+      const paired = t.properties.filter((p) => p.relation?.pairedKey).length;
+      expect(full.properties).toHaveLength(t.properties.length + 1 + paired);
       expect(full.views.map((v) => v.name)).toEqual(t.views.map((v) => v.name));
       for (const v of full.views) if (v.type === "BOARD") expect(full.properties.some((p) => p.id === v.config.groupBy)).toBe(true);
       for (const v of full.views) if (v.type === "CALENDAR" || v.type === "TIMELINE") expect(full.properties.some((p) => p.id === v.config.dateBy && (p.type === "DATE" || p.type === "CREATED_TIME"))).toBe(true);
       const rows = await svc.queryRows(userId, d.id, { today });
       expect(rows.total).toBe(t.rows.length);
-      for (const r of rows.rows) for (const p of full.properties) if (r.values[p.id] !== undefined) expect(validateValue(p, r.values[p.id])).toEqual(r.values[p.id]);
+      // Results are calculated, not entered: only hand-set values go through validateValue.
+      for (const r of rows.rows) for (const p of full.properties) if (r.values[p.id] !== undefined && p.type !== "ROLLUP" && p.type !== "FORMULA") expect(validateValue(p, r.values[p.id])).toEqual(r.values[p.id]);
       // Views with filters return a subset without errors.
       for (const v of full.views) await svc.queryRows(userId, d.id, { today, filter: v.config.filter ?? null, sorts: v.config.sorts });
     }

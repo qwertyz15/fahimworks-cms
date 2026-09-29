@@ -1,6 +1,6 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
-import type { PropertyDef } from "@/lib/db-properties";
+import { behavesAs, isResultProp, type PropertyDef } from "@/lib/db-properties";
 import {
   MAX_FILTER_DEPTH,
   MAX_FILTER_RULES,
@@ -36,7 +36,10 @@ const text = (id: string) => sql`(p."values" ->> ${id}::text)`;
 const escapeLike = (v: string) => v.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 function textExpr(def: PropertyDef) {
-  return def.isTitle || def.type === "TITLE" ? sql`p."title"` : text(def.id);
+  if (def.isTitle || def.type === "TITLE") return sql`p."title"`;
+  // Results can hold an {error} object: never match it as text.
+  if (isResultProp(def)) return sql`(CASE WHEN jsonb_typeof(${json(def.id)}) = 'string' THEN ${text(def.id)} END)`;
+  return text(def.id);
 }
 
 /** A date expression (YYYY-MM-DD text) for date-like properties. */
@@ -52,18 +55,21 @@ function numberExpr(id: string) {
 
 function isEmpty(def: PropertyDef) {
   if (def.isTitle || def.type === "TITLE") return sql`(p."title" = '')`;
-  return sql`(${json(def.id)} IS NULL OR ${json(def.id)} = 'null'::jsonb OR ${json(def.id)} = '[]'::jsonb OR ${json(def.id)} = '""'::jsonb)`;
+  const errored = isResultProp(def) ? sql` OR (jsonb_typeof(${json(def.id)}) = 'object' AND ${json(def.id)} ? 'error')` : empty;
+  return sql`(${json(def.id)} IS NULL OR ${json(def.id)} = 'null'::jsonb OR ${json(def.id)} = '[]'::jsonb OR ${json(def.id)} = '""'::jsonb${errored})`;
 }
 
 function compileRule(rule: FilterRule, ctx: CompileContext): Prisma.Sql | null {
   const def = ctx.props.get(rule.propertyId);
-  if (!def || !operatorsFor(def.type).includes(rule.operator)) return null;
+  if (!def) return null;
+  const type = behavesAs(def);
+  if (!operatorsFor(type).includes(rule.operator)) return null;
   const op = rule.operator;
   const v = rule.value;
   if (op === "is_empty") return isEmpty(def);
   if (op === "is_not_empty") return sql`NOT ${isEmpty(def)}`;
 
-  switch (def.type) {
+  switch (type) {
     case "TITLE":
     case "TEXT":
     case "URL":
@@ -107,7 +113,8 @@ function compileRule(rule: FilterRule, ctx: CompileContext): Prisma.Sql | null {
       return op === "is" ? sql`${text(def.id)} = ${v}` : sql`(${text(def.id)} IS NULL OR ${text(def.id)} <> ${v})`;
     }
     case "MULTI_SELECT":
-    case "PERSON": {
+    case "PERSON":
+    case "RELATION": {
       if (typeof v !== "string") return null;
       const has = sql`COALESCE(${json(def.id)}, '[]'::jsonb) @> ${JSON.stringify([v])}::jsonb`;
       return op === "contains" ? has : sql`NOT ${has}`;
@@ -131,6 +138,8 @@ function compileRule(rule: FilterRule, ctx: CompileContext): Prisma.Sql | null {
       return cmp ? sql`${e} ${raw(cmp)} ${d}` : null;
     }
     case "FILES":
+    case "ROLLUP":
+    case "FORMULA":
       return null;
   }
 }
@@ -156,7 +165,7 @@ export function compileSorts(sorts: SortRule[] | undefined, ctx: CompileContext)
     if (!def) continue;
     const dir = raw(s.direction === "desc" ? "DESC" : "ASC");
     let e: Prisma.Sql;
-    switch (def.type) {
+    switch (behavesAs(def)) {
       case "NUMBER":
         e = numberExpr(def.id);
         break;
@@ -180,7 +189,8 @@ export function compileSorts(sorts: SortRule[] | undefined, ctx: CompileContext)
       case "MULTI_SELECT":
       case "PERSON":
       case "FILES":
-        e = sql`jsonb_array_length(COALESCE(${json(def.id)}, '[]'::jsonb))`;
+      case "RELATION":
+        e = sql`(CASE WHEN jsonb_typeof(${json(def.id)}) = 'array' THEN jsonb_array_length(${json(def.id)}) ELSE 0 END)`;
         break;
       default:
         e = sql`lower(${textExpr(def)})`;
@@ -203,7 +213,7 @@ export function compileSearch(q: string | undefined): Prisma.Sql {
 /** Start / end date expressions for a date-like property (range end falls back to start). */
 function dateRangeExprs(def: PropertyDef, endDef?: PropertyDef) {
   const start = dateExpr(def);
-  const end = endDef ? dateExpr(endDef) : def.type === "DATE" ? sql`(p."values" -> ${def.id}::text ->> 'end')` : start;
+  const end = endDef ? dateExpr(endDef) : behavesAs(def) === "DATE" ? sql`(p."values" -> ${def.id}::text ->> 'end')` : start;
   return { start, end: sql`COALESCE(${end}, ${start})` };
 }
 
@@ -215,15 +225,15 @@ const DATE_LIKE = new Set(["DATE", "CREATED_TIME", "LAST_EDITED_TIME"]);
  */
 export function compileWindow(w: DateWindow, ctx: CompileContext): Prisma.Sql | null {
   const def = ctx.props.get(w.propertyId);
-  if (!def || !DATE_LIKE.has(def.type)) return null;
+  if (!def || !DATE_LIKE.has(behavesAs(def))) return null;
   const endDef = w.endPropertyId ? ctx.props.get(w.endPropertyId) : undefined;
-  const { start, end } = dateRangeExprs(def, endDef && endDef.type === "DATE" ? endDef : undefined);
+  const { start, end } = dateRangeExprs(def, endDef && behavesAs(endDef) === "DATE" ? endDef : undefined);
   return sql`(${start} IS NOT NULL AND ${start} <= ${w.to} AND ${end} >= ${w.from})`;
 }
 
 /** Rows with no value for a date property (the "No date" tray). */
 export function compileUndated(propertyId: string, ctx: CompileContext): Prisma.Sql | null {
   const def = ctx.props.get(propertyId);
-  if (!def || def.type !== "DATE") return null;
+  if (!def || behavesAs(def) !== "DATE") return null;
   return sql`(${dateExpr(def)} IS NULL)`;
 }

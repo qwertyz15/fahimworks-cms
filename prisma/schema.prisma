@@ -303,6 +303,9 @@ enum PropertyType {
   FILES
   CREATED_TIME
   LAST_EDITED_TIME
+  RELATION
+  ROLLUP
+  FORMULA
 }
 
 enum ViewType {
@@ -357,6 +360,8 @@ model Database {
   visibility   DatabaseVisibility @default(PRIVATE)
   /// Template it was created from, e.g. "tasks".
   templateKey  String?            @map("template_key")
+  /// Day formulas using now()/today() were last recalculated (daily refresh).
+  computedOn   DateTime?          @map("computed_on") @db.Date
   archivedAt   DateTime?          @map("archived_at")
   createdById  String             @map("created_by_id")
   createdBy    User               @relation("DatabaseCreator", fields: [createdById], references: [id], onDelete: Restrict)
@@ -385,6 +390,8 @@ model DatabaseProperty {
   isTitle    Boolean      @default(false) @map("is_title")
   createdAt  DateTime     @default(now()) @map("created_at")
   updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  relations PageRelation[]
 
   @@index([databaseId, position])
   @@map("database_properties")
@@ -440,12 +447,33 @@ model Page {
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
-  children  Page[]     @relation("PageChildren")
-  databases Database[] @relation("PageDatabases")
+  children  Page[]         @relation("PageChildren")
+  databases Database[]     @relation("PageDatabases")
   assets    Asset[]
+  linksFrom PageRelation[] @relation("RelationFrom")
+  linksTo   PageRelation[] @relation("RelationTo")
 
   @@index([databaseId, archivedAt, position])
   @@index([workspaceId, archivedAt])
   @@index([values(ops: JsonbPathOps)], type: Gin)
   @@map("pages")
+}
+
+/// A link made by a Relation property. `propertyId` is the primary side of the
+/// pair; the paired property (two-way) reads the same rows in reverse. Values are
+/// also mirrored into pages.values on both sides for fast views.
+model PageRelation {
+  propertyId String           @map("property_id")
+  property   DatabaseProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  fromPageId String           @map("from_page_id")
+  fromPage   Page             @relation("RelationFrom", fields: [fromPageId], references: [id], onDelete: Cascade)
+  toPageId   String           @map("to_page_id")
+  toPage     Page             @relation("RelationTo", fields: [toPageId], references: [id], onDelete: Cascade)
+  position   Int              @default(0)
+  createdAt  DateTime         @default(now()) @map("created_at")
+
+  @@id([propertyId, fromPageId, toPageId])
+  @@index([toPageId])
+  @@index([fromPageId])
+  @@map("page_relations")
 }
