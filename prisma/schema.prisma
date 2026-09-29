@@ -85,33 +85,39 @@ model User {
   auditLogs AuditLog[]
   assets    Asset[]
 
+  workspacesOwned  Workspace[]       @relation("WorkspaceOwner")
+  memberships      WorkspaceMember[]
+  databasesCreated Database[]        @relation("DatabaseCreator")
+  pagesCreated     Page[]            @relation("PageCreator")
+  pagesEdited      Page[]            @relation("PageEditor")
+
   @@map("users")
 }
 
 // ─────────────────────────── Content ───────────────────────────
 
 model Content {
-  id            String      @id @default(cuid())
+  id            String        @id @default(cuid())
   /// Stable public identifier used by the portfolio.
-  slug          String      @unique
+  slug          String        @unique
   title         String
   source        ContentSource @default(IMPORTED)
   /// Original page for IMPORTED items; null for WRITTEN (Notebook) entries.
   url           String?
   /// Canonical form used for duplicate detection (lib/url.ts). Null for WRITTEN entries.
-  normalizedUrl String?     @unique @map("normalized_url")
+  normalizedUrl String?       @unique @map("normalized_url")
   /// Optional subtitle shown under the title (Notebook entries).
   subtitle      String?
   /// Cover image chosen for a Notebook entry (shown atop the article). Falls back to the first image for `thumbnail`.
-  coverImage    String?     @map("cover_image")
+  coverImage    String?       @map("cover_image")
   type          ContentType
   description   String?
   thumbnail     String?
   /// Author name as extracted from the page (or entered manually).
   author        String?
   /// Original publication date of the article on its source site.
-  publishDate   DateTime?   @map("publish_date")
-  featured      Boolean     @default(false)
+  publishDate   DateTime?     @map("publish_date")
+  featured      Boolean       @default(false)
 
   // Workflow
   status             ContentStatus      @default(DRAFT)
@@ -124,31 +130,31 @@ model Content {
   rejectionReason    String?            @map("rejection_reason")
 
   // Extraction
-  extractionStatus ExtractionStatus @default(NOT_STARTED) @map("extraction_status")
-  extractionError  String?          @map("extraction_error")
-  extractedAt      DateTime?        @map("extracted_at")
-  finalUrl         String?          @map("final_url")
-  canonicalUrl     String?          @map("canonical_url")
-  siteName         String?          @map("site_name")
-  language         String?
-  summary          String?
-  contentText      String?          @map("content_text")
+  extractionStatus  ExtractionStatus @default(NOT_STARTED) @map("extraction_status")
+  extractionError   String?          @map("extraction_error")
+  extractedAt       DateTime?        @map("extracted_at")
+  finalUrl          String?          @map("final_url")
+  canonicalUrl      String?          @map("canonical_url")
+  siteName          String?          @map("site_name")
+  language          String?
+  summary           String?
+  contentText       String?          @map("content_text")
   /// Sanitised HTML (sanitize-html allowlist). Never render unsanitised.
-  contentHtml      String?          @map("content_html")
+  contentHtml       String?          @map("content_html")
   /// Notebook editor document (Tiptap JSON). contentHtml is its server-sanitised rendering.
-  body             Json?
-  wordCount        Int?             @map("word_count")
-  readingMinutes   Int?             @map("reading_minutes")
-  images           Json?            @default("[]")
-  metadata         Json?            @default("{}")
-  contentHash      String?          @map("content_hash")
+  body              Json?
+  wordCount         Int?             @map("word_count")
+  readingMinutes    Int?             @map("reading_minutes")
+  images            Json?            @default("[]")
+  metadata          Json?            @default("{}")
+  contentHash       String?          @map("content_hash")
   /// 64-bit SimHash as 16 hex chars.
-  simhash          String?
-  duplicateWarnings Json?           @default("[]") @map("duplicate_warnings")
+  simhash           String?
+  duplicateWarnings Json?            @default("[]") @map("duplicate_warnings")
 
-  authorId  String   @map("author_id")
-  authorRef User     @relation(fields: [authorId], references: [id], onDelete: Restrict)
-  tags      Tag[]
+  authorId           String              @map("author_id")
+  authorRef          User                @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  tags               Tag[]
   verificationTokens VerificationToken[]
   assets             Asset[]
 
@@ -176,11 +182,15 @@ model Asset {
   /// The entry that uses it (set on save). Null = not (yet) used by any entry.
   contentId    String?  @map("content_id")
   content      Content? @relation(fields: [contentId], references: [id], onDelete: SetNull)
+  /// Or the workspace page (database row) that uses it.
+  pageId       String?  @map("page_id")
+  page         Page?    @relation(fields: [pageId], references: [id], onDelete: SetNull)
   uploadedById String   @map("uploaded_by_id")
   uploadedBy   User     @relation(fields: [uploadedById], references: [id], onDelete: Restrict)
   createdAt    DateTime @default(now()) @map("created_at")
 
   @@index([contentId])
+  @@index([pageId])
   @@index([createdAt])
   @@map("assets")
 }
@@ -259,4 +269,181 @@ model AuditLog {
   @@index([createdAt])
   @@index([targetType, targetId])
   @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Workspace databases (Notion-style). Every database row is a Page.
+// Built for one user today; workspaceId + WorkspaceMember make sharing possible.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum WorkspaceRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+enum DatabaseVisibility {
+  PRIVATE
+  SHARED
+}
+
+enum PropertyType {
+  TITLE
+  TEXT
+  NUMBER
+  SELECT
+  MULTI_SELECT
+  STATUS
+  DATE
+  CHECKBOX
+  URL
+  EMAIL
+  PHONE
+  PERSON
+  FILES
+  CREATED_TIME
+  LAST_EDITED_TIME
+}
+
+enum ViewType {
+  TABLE
+  BOARD
+  LIST
+  CALENDAR
+  TIMELINE
+  GALLERY
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String   @map("owner_id")
+  owner     User     @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  members   WorkspaceMember[]
+  databases Database[]
+  pages     Page[]
+
+  @@index([ownerId])
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  workspaceId String        @map("workspace_id")
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String        @map("user_id")
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        WorkspaceRole @default(EDITOR)
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  @@id([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_members")
+}
+
+model Database {
+  id           String             @id @default(cuid())
+  workspaceId  String             @map("workspace_id")
+  workspace    Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// Page the database lives in (Phase 4: databases inside pages). Null = top level.
+  parentPageId String?            @map("parent_page_id")
+  parentPage   Page?              @relation("PageDatabases", fields: [parentPageId], references: [id], onDelete: SetNull)
+  title        String
+  description  String?
+  icon         String?
+  coverImage   String?            @map("cover_image")
+  visibility   DatabaseVisibility @default(PRIVATE)
+  /// Template it was created from, e.g. "tasks".
+  templateKey  String?            @map("template_key")
+  archivedAt   DateTime?          @map("archived_at")
+  createdById  String             @map("created_by_id")
+  createdBy    User               @relation("DatabaseCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  properties DatabaseProperty[]
+  views      DatabaseView[]
+  pages      Page[]             @relation("DatabaseRows")
+
+  @@index([workspaceId, archivedAt])
+  @@map("databases")
+}
+
+model DatabaseProperty {
+  id         String       @id @default(cuid())
+  databaseId String       @map("database_id")
+  database   Database     @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  name       String
+  type       PropertyType
+  /// Options (select/status), number format, default value, …
+  config     Json         @default("{}")
+  /// Fractional index (sort order of columns).
+  position   String
+  /// The Title property — its value is the row page's title.
+  isTitle    Boolean      @default(false) @map("is_title")
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  @@index([databaseId, position])
+  @@map("database_properties")
+}
+
+model DatabaseView {
+  id         String   @id @default(cuid())
+  databaseId String   @map("database_id")
+  database   Database @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  name       String
+  type       ViewType
+  position   String
+  /// Filter tree, sorts, visible properties, widths, groupBy, …
+  config     Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([databaseId, position])
+  @@map("database_views")
+}
+
+model Page {
+  id             String    @id @default(cuid())
+  workspaceId    String    @map("workspace_id")
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// Set when the page is a row of a database.
+  databaseId     String?   @map("database_id")
+  database       Database? @relation("DatabaseRows", fields: [databaseId], references: [id], onDelete: Cascade)
+  parentPageId   String?   @map("parent_page_id")
+  parentPage     Page?     @relation("PageChildren", fields: [parentPageId], references: [id], onDelete: SetNull)
+  title          String    @default("")
+  icon           String?
+  coverImage     String?   @map("cover_image")
+  /// Tiptap document (same format as Notebook entries).
+  body           Json?
+  contentHtml    String?   @map("content_html")
+  contentText    String?   @map("content_text")
+  /// Property values, keyed by property id.
+  values         Json      @default("{}")
+  /// Title + property values + body text, for search.
+  searchText     String?   @map("search_text")
+  /// Fractional index (manual order in a database).
+  position       String
+  archivedAt     DateTime? @map("archived_at")
+  /// Notebook article this page was published as (Phase 2).
+  contentId      String?   @unique @map("content_id")
+  createdById    String    @map("created_by_id")
+  createdBy      User      @relation("PageCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  lastEditedById String    @map("last_edited_by_id")
+  lastEditedBy   User      @relation("PageEditor", fields: [lastEditedById], references: [id], onDelete: Restrict)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  children  Page[]     @relation("PageChildren")
+  databases Database[] @relation("PageDatabases")
+  assets    Asset[]
+
+  @@index([databaseId, archivedAt, position])
+  @@index([workspaceId, archivedAt])
+  @@index([values(ops: JsonbPathOps)], type: Gin)
+  @@map("pages")
 }

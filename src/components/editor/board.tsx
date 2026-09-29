@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Node } from "@tiptap/core";
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from "@tiptap/react";
 import {
@@ -12,7 +12,6 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { SortableContext, arrayMove, horizontalListSortingStrategy, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -42,6 +41,8 @@ export interface BoardColumn {
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+/** No layout animation after a drop: dnd-kit's derived-transform animation can loop when a card changes column. */
+const noLayoutAnimation = () => false;
 const LABELS = HIGHLIGHT_COLORS as readonly string[];
 
 export function newBoard(): BoardColumn[] {
@@ -142,38 +143,38 @@ function BoardView({ node, updateAttributes, deleteNode, editor }: ReactNodeView
     setActiveId(String(e.active.id));
   };
 
-  // Moving a card into another column happens while dragging (live preview).
-  const onDragOver = ({ active, over }: DragOverEvent) => {
-    if (!over || active.data.current?.type !== "card") return;
-    const from = columnOf(String(active.id));
-    const to = columnOf(String(over.id));
-    if (!from || !to || from.id === to.id) return;
-    setCols((prev) => {
-      const src = prev.find((c) => c.id === from.id)!;
-      const card = src.cards.find((c) => c.id === active.id)!;
-      const dst = prev.find((c) => c.id === to.id)!;
-      const overIndex = dst.cards.findIndex((c) => c.id === over.id);
-      const at = overIndex >= 0 ? overIndex : dst.cards.length;
-      return prev.map((c) =>
-        c.id === src.id ? { ...c, cards: c.cards.filter((x) => x.id !== card.id) } : c.id === dst.id ? { ...c, cards: [...c.cards.slice(0, at), card, ...c.cards.slice(at)] } : c,
-      );
-    });
-  };
-
+  /*
+   * Cards move on drop only. Moving them between columns during the drag reflows the
+   * columns, which changes what's under the pointer and moves the card back — an update
+   * loop. The column under the pointer is highlighted instead.
+   */
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     dragging.current = false;
     setActiveId(null);
-    if (!over) return commit(cols);
+    if (!over) return;
     if (active.data.current?.type === "column") {
       const a = cols.findIndex((c) => c.id === active.id);
       const b = cols.findIndex((c) => c.id === (columnOf(String(over.id))?.id ?? over.id));
-      return commit(a >= 0 && b >= 0 ? arrayMove(cols, a, b) : cols);
+      if (a >= 0 && b >= 0 && a !== b) commit(arrayMove(cols, a, b));
+      return;
     }
-    const col = columnOf(String(active.id));
-    if (!col) return commit(cols);
-    const a = col.cards.findIndex((c) => c.id === active.id);
-    const b = col.cards.findIndex((c) => c.id === over.id);
-    commit(a >= 0 && b >= 0 && a !== b ? cols.map((c) => (c.id === col.id ? { ...c, cards: arrayMove(c.cards, a, b) } : c)) : cols);
+    const from = columnOf(String(active.id));
+    const to = columnOf(String(over.id));
+    if (!from || !to) return;
+    const card = from.cards.find((c) => c.id === active.id)!;
+    if (from.id === to.id) {
+      const a = from.cards.findIndex((c) => c.id === active.id);
+      const b = from.cards.findIndex((c) => c.id === over.id);
+      if (a >= 0 && b >= 0 && a !== b) commit(cols.map((c) => (c.id === from.id ? { ...c, cards: arrayMove(c.cards, a, b) } : c)));
+      return;
+    }
+    const overIndex = to.cards.findIndex((c) => c.id === over.id);
+    const at = overIndex >= 0 ? overIndex : to.cards.length;
+    commit(
+      cols.map((c) =>
+        c.id === from.id ? { ...c, cards: c.cards.filter((x) => x.id !== card.id) } : c.id === to.id ? { ...c, cards: [...c.cards.slice(0, at), card, ...c.cards.slice(at)] } : c,
+      ),
+    );
   };
 
   const setCard = (colId: string, cardId: string, patch: Partial<BoardCard> | null) =>
@@ -185,6 +186,10 @@ function BoardView({ node, updateAttributes, deleteNode, editor }: ReactNodeView
     commit(cols.map((c) => (c.id === colId ? { ...c, cards: [...c.cards, { id, text: "", label: null }] } : c)));
     setEditingCard(id);
   };
+
+  // Stable id lists for SortableContext (new arrays each render make it re-measure in a loop).
+  const columnIds = useMemo(() => cols.map((c) => c.id), [cols]);
+  const cardIds = useMemo(() => new Map(cols.map((c) => [c.id, c.cards.map((x) => x.id)])), [cols]);
 
   const activeCard = activeId ? cols.flatMap((c) => c.cards).find((c) => c.id === activeId) : undefined;
   const activeColumn = activeId ? cols.find((c) => c.id === activeId) : undefined;
@@ -199,9 +204,9 @@ function BoardView({ node, updateAttributes, deleteNode, editor }: ReactNodeView
           </button>
         )}
       </div>
-      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd} onDragCancel={() => ((dragging.current = false), setActiveId(null), setCols(clampBoard(node.attrs.columns as BoardColumn[])))}>
+      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => ((dragging.current = false), setActiveId(null), setCols(clampBoard(node.attrs.columns as BoardColumn[])))}>
         <div className="flex gap-3 overflow-x-auto pb-2">
-          <SortableContext items={cols.map((c) => c.id)} strategy={horizontalListSortingStrategy}>
+          <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
             {cols.map((col) => (
               <ColumnView
                 key={col.id}
@@ -213,7 +218,7 @@ function BoardView({ node, updateAttributes, deleteNode, editor }: ReactNodeView
                 onAddCard={() => addCard(col.id)}
                 canAddCard={totalCards < BOARD_MAX_CARDS}
               >
-                <SortableContext items={col.cards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+                <SortableContext items={cardIds.get(col.id) ?? []} strategy={verticalListSortingStrategy}>
                   {col.cards.map((card) => (
                     <CardView
                       key={card.id}
@@ -271,7 +276,7 @@ function ColumnView({
   onAddCard: () => void;
   children: ReactNode;
 }) {
-  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id: col.id, data: { type: "column" }, disabled: !editable });
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging, isOver } = useSortable({ id: col.id, data: { type: "column" }, disabled: !editable, animateLayoutChanges: noLayoutAnimation });
   const [title, setTitle] = useState(col.title);
   // Follow renames from outside (undo, reload) — adjusted during render, not in an effect.
   const [shownTitle, setShownTitle] = useState(col.title);
@@ -283,7 +288,7 @@ function ColumnView({
     <section
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn("board-column group/col", isDragging && "opacity-40")}
+      className={cn("board-column group/col", isDragging && "opacity-40", isOver && !isDragging && "ring-2 ring-primary/40")}
       aria-label={`Column ${col.title}`}
       data-testid="board-column"
     >
@@ -337,7 +342,7 @@ function CardView({
   onLabel: (label: HighlightColor | null) => void;
   onDelete: () => void;
 }) {
-  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id: card.id, data: { type: "card" }, disabled: !editable || editing });
+  const { setNodeRef, attributes, listeners, transform, transition, isDragging } = useSortable({ id: card.id, data: { type: "card" }, disabled: !editable || editing, animateLayoutChanges: noLayoutAnimation });
   const [draft, setDraft] = useState(card.text);
   const [labels, setLabels] = useState(false);
   const [shownText, setShownText] = useState(card.text);

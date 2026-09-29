@@ -13,6 +13,7 @@ import { z } from "zod";
 import { RATE_LIMITS } from "@/lib/rate-limit";
 import { presignUpload, type PresignedUpload } from "@/lib/storage";
 import { cleanupUnusedAssets, recordAsset } from "@/server/services/assets";
+import { requirePage } from "@/server/databases/service";
 
 /** Validate a save payload and store it; returns the saved entry or an error message. */
 async function saveFromPayload(payload: unknown, userId: string): Promise<SavedEntry | string> {
@@ -84,6 +85,7 @@ const uploadSchema = z.object({
   contentType: z.string().max(100),
   size: z.number().int().positive(),
   contentId: z.string().min(1).max(64).nullable().optional(),
+  pageId: z.string().min(1).max(64).nullable().optional(),
 });
 
 /** A short-lived signed upload URL for one image / video / file (admin only, rate limited). */
@@ -91,6 +93,8 @@ export async function createUploadAction(payload: unknown): Promise<ActionResult
   return adminAction(
     async (user) => {
       const input = uploadSchema.parse(payload);
+      // Uploads for a workspace page: it must be one the user can edit.
+      if (input.pageId) await requirePage(user.id, input.pageId);
       const upload = await presignUpload(input);
       await recordAsset({
         key: upload.key,
@@ -100,6 +104,7 @@ export async function createUploadAction(payload: unknown): Promise<ActionResult
         filename: input.filename,
         uploadedById: user.id,
         contentId: input.contentId ?? null,
+        pageId: input.pageId ?? null,
       });
       return { ok: true, data: upload };
     },

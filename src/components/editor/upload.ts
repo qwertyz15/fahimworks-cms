@@ -63,6 +63,12 @@ export function kindOf(file: File): UploadKind | null {
 
 export class UploadError extends Error {}
 
+/** What an upload belongs to: a Notebook entry or a workspace page. */
+export interface UploadTarget {
+  contentId?: string | null;
+  pageId?: string | null;
+}
+
 const NOUN: Record<UploadKind, string> = { image: "image", video: "video", audio: "audio file", file: "file" };
 const HELP: Record<UploadKind, string> = {
   image: "Use PNG, JPEG, WebP, GIF or AVIF.",
@@ -78,7 +84,7 @@ const HELP: Record<UploadKind, string> = {
 export async function uploadFile(
   file: File,
   kind: UploadKind,
-  opts: { contentId?: string | null; maxBytes: number; onProgress?: (pct: number) => void },
+  opts: UploadTarget & { maxBytes: number; onProgress?: (pct: number) => void },
 ): Promise<string> {
   const type = fileType(file);
   if (!ACCEPTED_TYPES[kind].includes(type)) throw new UploadError(`“${file.name}” isn't a supported ${NOUN[kind]}. ${HELP[kind]}`);
@@ -86,7 +92,7 @@ export async function uploadFile(
     throw new UploadError(`“${file.name}” is ${(file.size / (1024 * 1024)).toFixed(1)} MB — the limit is ${Math.round(opts.maxBytes / (1024 * 1024))} MB.`);
   }
 
-  const res = await createUploadAction({ kind, filename: file.name || NOUN[kind], contentType: type, size: file.size, contentId: opts.contentId ?? null });
+  const res = await createUploadAction({ kind, filename: file.name || NOUN[kind], contentType: type, size: file.size, contentId: opts.contentId ?? null, pageId: opts.pageId ?? null });
   if (!res.ok || !res.data) throw new UploadError(res.ok ? "Could not start the upload." : res.error);
   const { uploadUrl, publicUrl, headers } = res.data;
 
@@ -102,4 +108,4 @@ export async function uploadFile(
   return publicUrl;
 }
 
-export const uploadImage = (file: File, opts: { contentId?: string | null; maxBytes: number; onProgress?: (pct: number) => void }) => uploadFile(file, "image", opts);
+export const uploadImage = (file: File, opts: UploadTarget & { maxBytes: number; onProgress?: (pct: number) => void }) => uploadFile(file, "image", opts);
