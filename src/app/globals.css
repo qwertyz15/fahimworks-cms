@@ -1024,3 +1024,20 @@ dialog.image-viewer::backdrop { background: transparent; }
 .image-viewer-media svg { background: var(--color-surface); border-radius: 0.5rem; }
 @keyframes viewer-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { dialog.image-viewer { animation: none; } }
+
+/* ── Print (Notebook / page export → Save as PDF) ──────────────── */
+@media print {
+  @page { margin: 16mm 16mm 18mm; }
+  .print-hidden { display: none !important; }
+  html, body { background: #fff !important; }
+  .print-view { min-height: 0; }
+  .print-view .prose-content a { color: inherit; text-decoration: underline; }
+  .print-view .prose-content :is(pre, figure, table, aside, details, blockquote, .mermaid-rendered, div[data-board-column]) { break-inside: avoid; }
+  .print-view .prose-content :is(h1, h2, h3, h4) { break-after: avoid; }
+  .print-view .prose-content pre { white-space: pre-wrap; overflow: visible; }
+  .print-view .prose-content details > * { display: block; }
+  /* Boards wrap onto rows instead of scrolling sideways. */
+  .print-view .prose-content div[data-type="board"] { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); overflow: visible; }
+  .print-view .prose-content :is(iframe, video, audio) { display: none; }
+  .print-view img { max-width: 100%; }
+}

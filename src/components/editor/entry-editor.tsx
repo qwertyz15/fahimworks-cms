@@ -1,5 +1,6 @@
 "use client";
 
+import { ExportMenu } from "@/components/export/export-menu";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { JSONContent } from "@tiptap/react";
@@ -252,6 +253,17 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
   );
   const isSaved = !dirty && !saving && !error && Boolean(id);
 
+  /** Export the saved version: save pending edits first. */
+  const prepareExport = async () => {
+    const idle = async () => {
+      while (inFlight.current) await new Promise((r) => setTimeout(r, 100));
+    };
+    await idle();
+    if (dirty || !values.current.id) await save();
+    await idle();
+    return values.current.id ?? null;
+  };
+
   return (
     <div className="-mx-4 -mt-6 sm:-mx-6 lg:-mx-8 lg:-mt-8">
       {/* Top bar */}
@@ -295,6 +307,7 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
               </Button>
             </>
           )}
+          <ExportMenu kind="notebook" prepare={prepareExport} />
           <Button size="sm" variant={isSaved || !published ? "outline" : "primary"} loading={saving} disabled={isSaved} onClick={() => void save()} title="Save (Ctrl+S)">
             {isSaved ? (
               <>

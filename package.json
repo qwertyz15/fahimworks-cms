@@ -48,6 +48,7 @@
     "bcryptjs": "3.0.3",
     "cheerio": "1.2.0",
     "clsx": "2.1.1",
+    "docx": "9.8.1",
     "fractional-indexing": "4.0.0",
     "geist": "1.7.2",
     "katex": "0.16.47",

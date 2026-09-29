@@ -20,6 +20,7 @@ import { Popover } from "./popover";
 import { TYPE_ICONS } from "./property-menu";
 import type { Person, PropertyDef, Row } from "./types";
 import { RelatedProvider, useRelated, type RelatedPage } from "./relation-editor";
+import { ExportMenu } from "@/components/export/export-menu";
 
 /** Saves this long after the last edit (Ctrl+S saves immediately). */
 const AUTOSAVE_MS = 1500;
@@ -270,6 +271,13 @@ export function PageEditor({
         )}
         <div className="ml-auto flex items-center gap-2">
           {!peek && <span className="hidden text-xs text-muted-foreground sm:inline">{rich.words.toLocaleString()} words</span>}
+          <ExportMenu
+            kind="page"
+            prepare={async () => {
+              if (dirty || inFlight.current) await save();
+              return pageId;
+            }}
+          />
           <PublishControls
             pageId={pageId}
             title={title}
