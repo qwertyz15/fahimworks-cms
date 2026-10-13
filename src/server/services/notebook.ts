@@ -11,6 +11,7 @@ import { deriveFields, mediaSources, renderNotebookHtml } from "./notebook-html"
 import { cleanupUnusedAssets, linkAssets } from "./assets";
 import { storagePublicOrigin } from "@/lib/storage";
 import { generateKeyBetween } from "fractional-indexing";
+import { deleteRevisionsOf, recordRevision } from "./revisions";
 
 /**
  * Notebook: posts written in the dashboard editor (source = WRITTEN).
@@ -20,6 +21,8 @@ import { generateKeyBetween } from "fractional-indexing";
 
 export interface SaveEntryInput {
   id?: string;
+  /** "auto" (autosave) or "save" (Ctrl+S / the Save button): how the version is kept. */
+  saveKind?: "auto" | "save";
   /** New entries only. */
   folderId?: string | null;
   title: string;
@@ -105,6 +108,7 @@ export async function saveEntry(input: SaveEntryInput, actorId: string): Promise
     });
     await audit({ actorId, action: "content.created", targetType: "content", targetId: created.id, metadata: { source: "WRITTEN" } });
     await linkAssets(created.id, [...mediaSources(contentHtml), ...(coverImage ? [coverImage] : [])]);
+    await recordRevision({ contentId: created.id }, { title, subtitle: input.subtitle, body: input.body, contentHtml, wordCount: derived.wordCount }, input.saveKind ?? "auto", actorId);
     return toSaved(created);
   }
 
@@ -121,6 +125,7 @@ export async function saveEntry(input: SaveEntryInput, actorId: string): Promise
   });
   await linkAssets(updated.id, [...mediaSources(contentHtml), ...(coverImage ? [coverImage] : [])]);
   // Autosave runs every few seconds — deliberately not audited per save.
+  await recordRevision({ contentId: updated.id }, { title, subtitle: input.subtitle, body: input.body, contentHtml, wordCount: derived.wordCount }, input.saveKind ?? "auto", actorId);
   return toSaved(updated);
 }
 
@@ -151,6 +156,7 @@ export async function deleteEntry(id: string, actorId: string) {
   if (!entry || entry.source !== "WRITTEN") throw new ContentError("Notebook entry not found.");
   const assetIds = (await db.asset.findMany({ where: { contentId: id }, select: { id: true } })).map((a) => a.id);
   await db.content.delete({ where: { id } });
+  await deleteRevisionsOf([id]);
   // Remove its images from storage right away (unless another entry uses them).
   if (assetIds.length) await cleanupUnusedAssets({ ids: assetIds, minAgeMs: 0 }).catch((err) => console.error("[notebook] image cleanup failed", err));
   await audit({ actorId, action: "content.deleted", targetType: "content", targetId: id, metadata: { title: entry.title, source: "WRITTEN" } });
@@ -168,6 +174,9 @@ export async function publishEntry(id: string, actorId: string) {
   if (!entry.wordCount) throw new WorkflowError("Write something before publishing.");
   await transition(id, entry.status, "PUBLISHED", { data: { publishDate: entry.publishDate ?? new Date() } });
   await audit({ actorId, action: "content.approved", targetType: "content", targetId: id, metadata: { source: "WRITTEN" } });
+  // The published version is kept for good.
+  const live = await db.content.findUnique({ where: { id }, select: { title: true, subtitle: true, body: true, contentHtml: true, wordCount: true } });
+  if (live) await recordRevision({ contentId: id }, { title: live.title, subtitle: live.subtitle, body: live.body, contentHtml: live.contentHtml, wordCount: live.wordCount ?? 0 }, "publish", actorId, { published: true });
 }
 
 /** Published → Draft (removed from the timeline and its article page). */

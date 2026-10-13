@@ -21,6 +21,7 @@ import { TYPE_ICONS } from "./property-menu";
 import type { Person, PropertyDef, Row } from "./types";
 import { RelatedProvider, useRelated, type RelatedPage } from "./relation-editor";
 import { ExportMenu } from "@/components/export/export-menu";
+import { HistoryButton } from "@/components/history/history-button";
 
 /** Saves this long after the last edit (Ctrl+S saves immediately). */
 const AUTOSAVE_MS = 1500;
@@ -87,6 +88,8 @@ export function PageEditor({
   const [savedAt, setSavedAt] = useState<string | null>(init.page.updatedAt);
   const changes = useRef(0);
   const inFlight = useRef(false);
+  /** The next save was asked for (Ctrl+S), not an autosave: kept as its own version. */
+  const manual = useRef(false);
   const queued = useRef(false);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const coverInput = useRef<HTMLInputElement>(null);
@@ -120,7 +123,9 @@ export function PageEditor({
       queued.current = false;
       const marker = changes.current;
       setError(null);
-      const res = await savePageAction({ id: pageId, bodyJson: JSON.stringify(editor.getJSON()), html: editor.getHTML(), coverImage: coverRef.current });
+      const saveKind = manual.current ? "save" : "auto";
+      manual.current = false;
+      const res = await savePageAction({ id: pageId, bodyJson: JSON.stringify(editor.getJSON()), html: editor.getHTML(), coverImage: coverRef.current, saveKind });
       if (res.ok && res.data) {
         setSavedAt(res.data.updatedAt);
         setPublish((p) => (p ? { ...p, outdated: true } : p));
@@ -158,6 +163,7 @@ export function PageEditor({
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
+        manual.current = true;
         void save();
       }
     };
@@ -271,6 +277,13 @@ export function PageEditor({
         )}
         <div className="ml-auto flex items-center gap-2">
           {!peek && <span className="hidden text-xs text-muted-foreground sm:inline">{rich.words.toLocaleString()} words</span>}
+          <HistoryButton
+            kind="page"
+            prepare={async () => {
+              if (dirty || inFlight.current) await save();
+              return pageId;
+            }}
+          />
           <ExportMenu
             kind="page"
             prepare={async () => {

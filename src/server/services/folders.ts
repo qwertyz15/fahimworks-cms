@@ -8,7 +8,7 @@ import { audit } from "./audit";
 import { ContentError } from "./content";
 import { uniqueSlug } from "./content-helpers";
 import { WorkflowError } from "./workflow";
-import { deleteEntry, publishEntry, unpublishEntry } from "./notebook";
+import { publishEntry, unpublishEntry } from "./notebook";
 
 /**
  * Notebook folders: nested to any depth (up to MAX_FOLDER_DEPTH), ordered by
@@ -37,7 +37,7 @@ export async function listFolders(): Promise<FolderRow[]> {
 
 const cleanName = (name: string) => name.replace(/\s+/g, " ").trim().slice(0, FOLDER_NAME_MAX);
 
-async function uniqueFolderSlug(name: string, excludeId?: string) {
+export async function uniqueFolderSlug(name: string, excludeId?: string) {
   const base = slugify(name, 60) || "folder";
   for (let i = 0; i < 6; i++) {
     const candidate = i === 0 ? base : `${base}-${randomBytes(2).toString("hex")}`;
@@ -221,14 +221,15 @@ export async function duplicateFolder(id: string, actorId: string) {
 }
 
 /**
- * Delete a folder. "move-up": its subfolders and entries go to the parent
- * folder. "delete-all": everything inside is deleted too (published entries
- * leave the timeline).
+ * Delete a folder (to the trash). "move-up": its subfolders and entries go
+ * to the parent folder first, so only the empty folder is trashed.
+ * "delete-all": the folder and everything inside go to the trash together.
  */
 export async function deleteFolder(id: string, mode: "move-up" | "delete-all", actorId: string) {
   const folder = await requireFolder(id);
-  const folders = await listFolders();
+  const { trashFolder } = await import("./trash");
   if (mode === "move-up") {
+    const folders = await listFolders();
     const subs = folders.filter((f) => f.parentId === id).sort(byPosition);
     const subKeys = generateNKeysBetween(await lastFolderPosition(folder.parentId), null, subs.length);
     const entries = (await db.content.findMany({ where: { source: "WRITTEN", folderId: id }, select: { id: true, folderPosition: true } })).sort((a, b) => ((a.folderPosition ?? "~") < (b.folderPosition ?? "~") ? -1 : 1));
@@ -236,19 +237,12 @@ export async function deleteFolder(id: string, mode: "move-up" | "delete-all", a
     await db.$transaction([
       ...subs.map((f, i) => db.notebookFolder.update({ where: { id: f.id }, data: { parentId: folder.parentId, position: subKeys[i] } })),
       ...entries.map((e, i) => db.content.update({ where: { id: e.id }, data: { folderId: folder.parentId, folderPosition: entryKeys[i] } })),
-      db.notebookFolder.delete({ where: { id } }),
     ]);
-    await audit({ actorId, action: "folder.deleted", targetType: "folder", targetId: id, metadata: { name: folder.name, mode, moved: subs.length + entries.length } });
-    return { deletedEntries: 0 };
+    await trashFolder(id, actorId);
+    return { deletedEntries: 0, wasPublished: false };
   }
-  const ids = subtreeIds(folders, id);
-  const entries = await db.content.findMany({ where: { source: "WRITTEN", folderId: { in: [...ids] } }, select: { id: true } });
-  for (const e of entries) await deleteEntry(e.id, actorId);
-  // Deepest first (a folder can't be deleted while it has subfolders).
-  const ordered = [...ids].sort((a, b) => pathOf(folders, b).length - pathOf(folders, a).length);
-  for (const fid of ordered) await db.notebookFolder.delete({ where: { id: fid } });
-  await audit({ actorId, action: "folder.deleted", targetType: "folder", targetId: id, metadata: { name: folder.name, mode, entries: entries.length, folders: ids.size } });
-  return { deletedEntries: entries.length };
+  const r = await trashFolder(id, actorId);
+  return { deletedEntries: r.entries, wasPublished: r.wasPublished };
 }
 
 /** Entries in a folder and all its subfolders. */

@@ -286,7 +286,7 @@ export function DeleteFolderDialog({ folder, parentName, entries, folders, onDel
       open
       onClose={onClose}
       title={`Delete “${folder.name}”?`}
-      description={empty ? "This folder is empty." : `It contains ${what}.`}
+      description={empty ? "This empty folder goes to the trash (restorable for 30 days)." : `It contains ${what}.`}
       footer={
         <>
           <Button variant="outline" size="sm" onClick={onClose}>
@@ -303,7 +303,7 @@ export function DeleteFolderDialog({ folder, parentName, entries, folders, onDel
               onClose();
             }}
           >
-            {mode === "delete-all" && !empty ? "Delete everything" : "Delete folder"}
+            {mode === "delete-all" && !empty ? "Move all to trash" : "Move folder to trash"}
           </Button>
         </>
       }
@@ -322,8 +322,8 @@ export function DeleteFolderDialog({ folder, parentName, entries, folders, onDel
           <label className={cn("flex items-start gap-2 rounded-md border p-2.5", mode === "delete-all" && "border-destructive/50 bg-destructive/5")}>
             <input type="radio" name="mode" checked={mode === "delete-all"} onChange={() => setMode("delete-all")} className="mt-0.5" />
             <span>
-              <span className="font-medium text-destructive">Delete everything inside</span>
-              <span className="block text-xs text-muted-foreground">Permanently deletes {what}. Published ones leave your timeline.</span>
+              <span className="font-medium text-destructive">Move everything inside to the trash</span>
+              <span className="block text-xs text-muted-foreground">Trashes {what} together — restorable for 30 days. Published ones leave your timeline.</span>
             </span>
           </label>
         </div>

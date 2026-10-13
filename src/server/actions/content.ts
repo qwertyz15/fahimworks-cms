@@ -1,5 +1,6 @@
 "use server";
 
+import { trashEntry } from "@/server/services/trash";
 import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -165,6 +166,13 @@ export async function updateContentAction(_prev: ActionResult, form: FormData): 
 export async function deleteContentAction(contentId: string, redirectToList = false): Promise<ActionResult> {
   const result = await adminAction<undefined>(async (user) => {
     const id = idSchema.parse(contentId);
+    // Notebook entries go to the trash (restorable); imported items are deleted.
+    const row = await db.content.findUnique({ where: { id }, select: { source: true } });
+    if (row?.source === "WRITTEN") {
+      await trashEntry(id, user.id);
+      updateTag(TIMELINE_TAG);
+      return { ok: true, message: "Moved to the Notebook trash (restorable for 30 days)." };
+    }
     await deleteContent(id, user.id);
     return { ok: true, message: "Content deleted." };
   });

@@ -7,7 +7,8 @@ import { idSchema, saveEntrySchema, urlSchema } from "@/lib/validation";
 import { fetchAndExtract } from "@/server/services/extraction";
 import { SafeFetchError } from "@/lib/http/safe-fetch";
 import { TIMELINE_TAG } from "@/server/queries/public";
-import { deleteEntry, publishEntry, saveEntry, searchLinkTargets, unpublishEntry, type LinkTarget, type SavedEntry } from "@/server/services/notebook";
+import { publishEntry, saveEntry, searchLinkTargets, unpublishEntry, type LinkTarget, type SavedEntry } from "@/server/services/notebook";
+import { trashEntry } from "@/server/services/trash";
 import { adminAction, type ActionResult } from "./result";
 import { z } from "zod";
 import { RATE_LIMITS } from "@/lib/rate-limit";
@@ -74,7 +75,8 @@ export async function deleteEntryAction(entryId: string): Promise<ActionResult> 
   const result = await adminAction<undefined>(async (user) => {
     const id = idSchema.parse(entryId);
     folderId = (await db.content.findUnique({ where: { id }, select: { folderId: true } }))?.folderId ?? null;
-    await deleteEntry(id, user.id);
+    // To the trash (restorable for 30 days).
+    await trashEntry(id, user.id);
     return { ok: true };
   });
   if (!result.ok) return result;

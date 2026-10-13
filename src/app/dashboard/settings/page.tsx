@@ -13,6 +13,10 @@ import { timelineUrl } from "@/lib/timeline";
 import { ImagesCard } from "@/components/settings/images-card";
 import { storagePublicOrigin, uploadsEnabled } from "@/lib/storage";
 import { assetStats } from "@/server/services/assets";
+import { SystemCard } from "@/components/settings/system-card";
+import { listErrors } from "@/server/services/errors";
+import { alertsConfigured } from "@/server/services/alerts";
+import { checkStorage } from "@/lib/storage";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -57,6 +61,14 @@ export default async function SettingsPage() {
       />
 
       <ImagesCard enabled={uploadsEnabled()} publicUrl={storagePublicOrigin()} {...(await assetStats())} />
+
+      <SystemCard
+        database={await db.$queryRaw`SELECT 1`.then(() => true, () => false)}
+        storage={await checkStorage()}
+        alerts={alertsConfigured()}
+        cron={Boolean(process.env.CRON_SECRET)}
+        errors={(await listErrors()).map((e) => ({ id: e.id, source: e.source, message: e.message, stack: e.stack, route: e.route, count: e.count, firstSeen: e.firstSeen.toISOString(), lastSeen: e.lastSeen.toISOString() }))}
+      />
 
       <Card>
         <CardHeader title="Portfolio integration" description="Read-only endpoints your portfolio site can consume. Only published items are exposed." />

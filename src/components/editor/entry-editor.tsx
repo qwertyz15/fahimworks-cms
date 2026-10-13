@@ -1,6 +1,7 @@
 "use client";
 
 import { ExportMenu } from "@/components/export/export-menu";
+import { HistoryButton } from "@/components/history/history-button";
 import { MoveDialog } from "@/components/notebook/dialogs";
 import type { FolderItem } from "@/components/notebook/types";
 import { pathOf } from "@/lib/notebook-folders";
@@ -86,6 +87,8 @@ export function EntryEditor({
   const published = status === "PUBLISHED";
   const changeCount = useRef(0);
   const inFlight = useRef(false);
+  /** The next save was asked for (Ctrl+S / Save), not an autosave: kept as its own version. */
+  const manual = useRef(false);
   const queued = useRef(false);
   const titleRef = useRef<HTMLTextAreaElement>(null);
 
@@ -123,6 +126,7 @@ export function EntryEditor({
         id: v.id,
         // Only used when the entry is created; afterwards moving is its own action.
         folderId: v.id ? undefined : v.folderId,
+        saveKind: manual.current ? ("save" as const) : ("auto" as const),
         title: v.title,
         subtitle: v.subtitle,
         tags: v.tags,
@@ -171,6 +175,7 @@ export function EntryEditor({
       setError(null);
       const marker = changeCount.current;
       const res = await saveEntryAction(buildPayload(v));
+      manual.current = false;
       if (res.ok && res.data) {
         applySaved(res.data, v, marker);
       } else if (!res.ok) {
@@ -224,6 +229,7 @@ export function EntryEditor({
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
+        manual.current = true;
         void save();
       }
     };
@@ -359,8 +365,9 @@ export function EntryEditor({
               </Button>
             </>
           )}
+          <HistoryButton kind="notebook" prepare={prepareExport} />
           <ExportMenu kind="notebook" prepare={prepareExport} />
-          <Button size="sm" variant={isSaved || !published ? "outline" : "primary"} loading={saving} disabled={isSaved} onClick={() => void save()} title="Save (Ctrl+S)">
+          <Button size="sm" variant={isSaved || !published ? "outline" : "primary"} loading={saving} disabled={isSaved} onClick={() => ((manual.current = true), void save())} title="Save (Ctrl+S)">
             {isSaved ? (
               <>
                 <Check /> Saved
@@ -491,15 +498,15 @@ export function EntryEditor({
       <Dialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
-        title="Delete this entry?"
-        description={`“${title || "Untitled"}” will be permanently deleted${published ? " and removed from your timeline" : ""}.`}
+        title="Move this entry to the trash?"
+        description={`“${title || "Untitled"}” goes to the trash${published ? " and leaves your timeline" : ""}. You can restore it for 30 days.`}
         footer={
           <>
             <Button variant="outline" size="sm" onClick={() => setConfirmDelete(false)}>
               Cancel
             </Button>
             <Button variant="destructive" size="sm" loading={del.pending} onClick={() => id && del.run(() => deleteEntryAction(id))}>
-              Delete permanently
+              Move to trash
             </Button>
           </>
         }

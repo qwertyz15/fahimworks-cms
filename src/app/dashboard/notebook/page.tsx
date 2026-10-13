@@ -4,6 +4,7 @@ import { NotebookBrowser } from "@/components/notebook/notebook-browser";
 import { folderPageUrl, writtenPostUrl } from "@/lib/timeline";
 import { listNotebook } from "@/server/queries/content";
 import { listFolders } from "@/server/services/folders";
+import { db } from "@/lib/db";
 
 export const metadata: Metadata = { title: "Notebook" };
 
@@ -11,7 +12,7 @@ export const metadata: Metadata = { title: "Notebook" };
 export default async function NotebookPage({ searchParams }: PageProps<"/dashboard/notebook">) {
   const sp = await searchParams;
   const entries = await listNotebook(); // checks the session
-  const folders = await listFolders();
+  const [folders, trashCount] = await Promise.all([listFolders(), db.trashItem.count()]);
   const folderId = typeof sp.folder === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(sp.folder) ? sp.folder : null;
   return (
     <div className="space-y-4">
@@ -33,6 +34,7 @@ export default async function NotebookPage({ searchParams }: PageProps<"/dashboa
         initialFolderId={folderId}
         articleBase={writtenPostUrl("")}
         folderPageBase={folderPageUrl("")}
+        trashCount={trashCount}
       />
     </div>
   );

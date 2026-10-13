@@ -22,6 +22,7 @@ import {
 import { filterWithinLimits, type DateWindow, type FilterGroup, type SortRule, type ViewConfig, type ViewType } from "@/lib/db-views";
 import { deriveFields, mediaSources, renderNotebookHtml } from "@/server/services/notebook-html";
 import { storagePublicOrigin } from "@/lib/storage";
+import { recordRevision } from "@/server/services/revisions";
 import { compileFilter, compileSearch, compileSorts, compileUndated, compileWindow, type CompileContext } from "./query";
 import { ROLLUP_FNS, rollupFnsFor, rollupResult, type RollupFn } from "@/lib/db-rollup";
 import { renameProp } from "@/lib/formula/engine";
@@ -830,7 +831,7 @@ export async function getPage(userId: string, pageId: string) {
 }
 
 /** Save a row page's body (same HTML pipeline as Notebook entries). */
-export async function savePageBody(userId: string, pageId: string, input: { body: Prisma.InputJsonValue; html: string; coverImage?: string | null }) {
+export async function savePageBody(userId: string, pageId: string, input: { body: Prisma.InputJsonValue; html: string; coverImage?: string | null; saveKind?: "auto" | "save" }) {
   const page = await requirePage(userId, pageId);
   const origin = storagePublicOrigin();
   const contentHtml = renderNotebookHtml(input.html, { imageOrigins: origin ? [origin] : [] });
@@ -851,5 +852,6 @@ export async function savePageBody(userId: string, pageId: string, input: { body
   });
   const urls = [...mediaSources(contentHtml), ...(updated.coverImage ? [updated.coverImage] : [])];
   if (urls.length) await db.asset.updateMany({ where: { url: { in: [...new Set(urls)] } }, data: { pageId } });
+  await recordRevision({ pageId }, { title: updated.title, body: input.body, contentHtml, wordCount: derived.wordCount }, input.saveKind ?? "auto", userId);
   return { id: updated.id, updatedAt: updated.updatedAt.toISOString(), words: derived.wordCount };
 }

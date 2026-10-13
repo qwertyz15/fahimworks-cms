@@ -1,6 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { DeleteObjectsCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectsCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { env } from "@/lib/env";
 import { slugify } from "@/lib/utils";
@@ -200,5 +200,17 @@ export async function deleteObjects(keys: string[]) {
     await s3(cfg).send(
       new DeleteObjectsCommand({ Bucket: cfg.bucket, Delete: { Objects: keys.slice(i, i + 1000).map((Key) => ({ Key })), Quiet: true } }),
     );
+  }
+}
+
+/** Is the media bucket reachable? "off" when uploads aren't configured. */
+export async function checkStorage(): Promise<"ok" | "off" | string> {
+  const cfg = config();
+  if (!cfg) return "off";
+  try {
+    await s3(cfg).send(new HeadBucketCommand({ Bucket: cfg.bucket }), { abortSignal: AbortSignal.timeout(8000) });
+    return "ok";
+  } catch (err) {
+    return err instanceof Error ? err.name || err.message : "unreachable";
   }
 }

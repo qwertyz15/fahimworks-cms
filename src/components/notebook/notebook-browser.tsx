@@ -108,7 +108,7 @@ function writeExpanded(ids: Set<string>) {
   window.dispatchEvent(new Event(EXPANDED_EVENT));
 }
 
-export function NotebookBrowser(init: { folders: FolderItem[]; entries: EntryItem[]; initialFolderId: string | null; articleBase: string; folderPageBase: string }) {
+export function NotebookBrowser(init: { folders: FolderItem[]; entries: EntryItem[]; initialFolderId: string | null; articleBase: string; folderPageBase: string; trashCount: number }) {
   const router = useRouter();
   // Server data, with optimistic changes on top until the next refresh.
   const [srcFolders, setSrcFolders] = useState(init.folders);
@@ -426,6 +426,10 @@ export function NotebookBrowser(init: { folders: FolderItem[]; entries: EntryIte
       <button type="button" onClick={() => setDialog({ kind: "new-folder", parentId: null })} className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground hover:bg-muted hover:text-foreground">
         <FolderPlus className="size-3.5" /> New folder
       </button>
+      <Link href="/dashboard/notebook/trash" className="mt-1 flex w-full items-center gap-2 border-t px-2 pt-2 pb-1 text-muted-foreground hover:text-foreground" data-testid="trash-link">
+        <Trash2 className="size-3.5" /> Trash
+        {init.trashCount > 0 && <span className="ml-auto text-[11px] tabular-nums">{init.trashCount}</span>}
+      </Link>
     </nav>
   );
   function renderTree(parentId: string | null, depth: number): React.ReactNode {
@@ -687,9 +691,9 @@ export function NotebookBrowser(init: { folders: FolderItem[]; entries: EntryIte
       )}
       {dialog?.kind === "delete-entries" && (
         <ConfirmDialog
-          title={dialog.ids.length === 1 ? `Delete “${entries.find((e) => e.id === dialog.ids[0])?.title ?? "entry"}”?` : `Delete ${dialog.ids.length} entries?`}
-          description="This can't be undone. Published entries leave your timeline."
-          confirm="Delete permanently"
+          title={dialog.ids.length === 1 ? `Move “${entries.find((e) => e.id === dialog.ids[0])?.title ?? "entry"}” to the trash?` : `Move ${dialog.ids.length} entries to the trash?`}
+          description="You can restore them from Trash for 30 days. Published entries leave your timeline."
+          confirm="Move to trash"
           onClose={() => setDialog(null)}
           onConfirm={() => bulk(dialog.ids, "delete")}
         />

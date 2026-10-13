@@ -22,16 +22,21 @@ export async function linkAssets(contentId: string, urls: string[]) {
 
 /** Every upload URL still in use: Notebook entries, workspace pages (bodies, covers, Files values) and database covers. */
 async function referencedUrls(): Promise<Set<string>> {
-  const [entries, pages, databases] = await Promise.all([
+  const [entries, pages, databases, revisions, trash] = await Promise.all([
     db.content.findMany({ where: { source: "WRITTEN" }, select: { contentHtml: true, coverImage: true } }),
     db.page.findMany({ select: { contentHtml: true, coverImage: true, values: true } }),
     db.database.findMany({ where: { coverImage: { not: null } }, select: { coverImage: true } }),
+    // Old versions and trashed entries can be restored: their images must survive.
+    db.revision.findMany({ select: { contentHtml: true } }),
+    db.trashItem.findMany({ select: { snapshot: true } }),
   ]);
+  const trashed = trash.flatMap((t) => ((t.snapshot as { entries?: { contentHtml?: string | null; coverImage?: string | null }[] } | null)?.entries ?? []));
   const refs = new Set<string>();
-  for (const r of [...entries, ...pages]) {
+  for (const r of [...entries, ...pages, ...trashed]) {
     if (r.coverImage) refs.add(r.coverImage);
     for (const url of mediaSources(r.contentHtml ?? "")) refs.add(url);
   }
+  for (const r of revisions) for (const url of mediaSources(r.contentHtml ?? "")) refs.add(url);
   // Files & media property values: [{ url, name, … }]
   for (const p of pages) {
     for (const v of Object.values((p.values ?? {}) as Record<string, unknown>)) {

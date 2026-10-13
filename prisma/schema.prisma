@@ -505,3 +505,66 @@ model NotebookFolder {
   @@index([parentId, position])
   @@map("notebook_folders")
 }
+
+/// A saved version of a Notebook entry (contentId) or a database page
+/// (pageId). No foreign key on purpose: versions outlive a trip to the trash.
+/// The newest version is the current state; older ones can be restored.
+model Revision {
+  id          String   @id @default(cuid())
+  contentId   String?  @map("content_id")
+  pageId      String?  @map("page_id")
+  title       String
+  subtitle    String?
+  body        Json?
+  contentHtml String?  @map("content_html")
+  wordCount   Int      @default(0) @map("word_count")
+  /// auto | save | publish | restore
+  reason      String
+  /// The version that was live (published) when it was saved.
+  published   Boolean  @default(false)
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([contentId, createdAt])
+  @@index([pageId, createdAt])
+  @@map("revisions")
+}
+
+/// A deleted Notebook entry or folder (with everything that was inside),
+/// kept for 30 days. `snapshot` holds what's needed to put it back.
+model TrashItem {
+  id          String   @id @default(cuid())
+  /// entry | folder
+  kind        String
+  title       String
+  snapshot    Json
+  entryCount  Int      @default(0) @map("entry_count")
+  folderCount Int      @default(0) @map("folder_count")
+  deletedById String?  @map("deleted_by_id")
+  deletedAt   DateTime @default(now()) @map("deleted_at")
+
+  @@index([deletedAt])
+  @@map("trash_items")
+}
+
+/// An error seen by the app (server, browser or health check), grouped by
+/// fingerprint: one row per distinct error with a count.
+model ErrorEvent {
+  id            String    @id @default(cuid())
+  fingerprint   String    @unique
+  /// server | client | health
+  source        String
+  message       String
+  stack         String?
+  route         String?
+  digest        String?
+  count         Int       @default(1)
+  firstSeen     DateTime  @default(now()) @map("first_seen")
+  lastSeen      DateTime  @default(now()) @map("last_seen")
+  lastAlertedAt DateTime? @map("last_alerted_at")
+  resolvedAt    DateTime? @map("resolved_at")
+
+  @@index([lastSeen])
+  @@map("error_events")
+}

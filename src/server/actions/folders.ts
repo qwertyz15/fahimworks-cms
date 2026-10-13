@@ -4,7 +4,8 @@ import { updateTag } from "next/cache";
 import { z } from "zod";
 import { TIMELINE_TAG } from "@/server/queries/public";
 import * as svc from "@/server/services/folders";
-import { publishEntry, unpublishEntry, deleteEntry } from "@/server/services/notebook";
+import { publishEntry, unpublishEntry } from "@/server/services/notebook";
+import { trashEntry } from "@/server/services/trash";
 import { WorkflowError } from "@/server/services/workflow";
 import { ContentError } from "@/server/services/content";
 import { adminAction, type ActionResult } from "./result";
@@ -67,7 +68,7 @@ export async function deleteFolderAction(payload: unknown): Promise<ActionResult
       const input = z.object({ id, mode: z.enum(["move-up", "delete-all"]) }).parse(payload);
       const r = await svc.deleteFolder(input.id, input.mode, user.id);
       updateTag(TIMELINE_TAG);
-      return { ok: true, data: r, message: input.mode === "delete-all" ? `Folder deleted with ${r.deletedEntries} ${r.deletedEntries === 1 ? "entry" : "entries"}.` : "Folder deleted; its contents moved up." };
+      return { ok: true, data: r, message: input.mode === "delete-all" ? `Moved the folder and ${r.deletedEntries} ${r.deletedEntries === 1 ? "entry" : "entries"} to the trash.` : "Folder moved to the trash; its contents moved up." };
     }),
   );
 }
@@ -156,7 +157,7 @@ export async function bulkEntriesAction(payload: unknown): Promise<ActionResult<
         try {
           if (input.op === "publish") await publishEntry(entryId, user.id);
           else if (input.op === "unpublish") await unpublishEntry(entryId, user.id);
-          else await deleteEntry(entryId, user.id);
+          else await trashEntry(entryId, user.id);
           done++;
         } catch (err) {
           if (!(err instanceof WorkflowError || err instanceof ContentError)) throw err;

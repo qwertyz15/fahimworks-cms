@@ -237,7 +237,7 @@ export async function searchRelationTargetsAction(payload: unknown): Res<{ id: s
 export async function savePageAction(payload: unknown): Res<{ id: string; updatedAt: string; words: number }> {
   return adminAction(async (user) => {
     const input = z
-      .object({ id, bodyJson: z.string().max(NOTEBOOK_MAX_BYTES), html: z.string().max(NOTEBOOK_MAX_BYTES), coverImage: z.string().max(2048).nullable().optional() })
+      .object({ id, bodyJson: z.string().max(NOTEBOOK_MAX_BYTES), html: z.string().max(NOTEBOOK_MAX_BYTES), coverImage: z.string().max(2048).nullable().optional(), saveKind: z.enum(["auto", "save"]).optional() })
       .parse(payload);
     let body: Prisma.InputJsonValue;
     try {
@@ -246,7 +246,7 @@ export async function savePageAction(payload: unknown): Res<{ id: string; update
       return { ok: false, error: "The page could not be read. Reload and try again." };
     }
     if (!body || typeof body !== "object" || (body as { type?: string }).type !== "doc") return { ok: false, error: "Invalid page content." };
-    return { ok: true, data: await svc.savePageBody(user.id, input.id, { body, html: input.html, coverImage: input.coverImage }) };
+    return { ok: true, data: await svc.savePageBody(user.id, input.id, { body, html: input.html, coverImage: input.coverImage, saveKind: input.saveKind }) };
   });
 }
 

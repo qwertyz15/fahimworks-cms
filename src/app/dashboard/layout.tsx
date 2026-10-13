@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/server/auth/guards";
 import { getSettings } from "@/server/services/settings";
 import { timelineUrl } from "@/lib/timeline";
+import { ClientErrorReporter } from "@/components/client-error-reporter";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await requireAdmin();
@@ -55,6 +56,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </header>
         {/* Pages marked data-full-width (database views) use the whole width, like Notion's full-width mode. */}
         <main className="mx-auto w-full max-w-6xl px-4 py-6 has-[[data-full-width]]:max-w-none sm:px-6 lg:px-8 lg:py-8">{children}</main>
+        <ClientErrorReporter />
       </div>
     </div>
   );

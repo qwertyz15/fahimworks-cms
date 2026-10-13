@@ -164,6 +164,7 @@ export const saveEntrySchema = z.object({
   id: z.string().min(1).max(64).optional(),
   /** Folder for a new entry (ignored once it exists: moving is its own action). */
   folderId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).nullable().optional(),
+  saveKind: z.enum(["auto", "save"]).optional(),
   title: z.string().max(300).default(""),
   subtitle: trimmed(300).transform((v) => v || null).nullable().default(null),
   tags: tagsSchema,
