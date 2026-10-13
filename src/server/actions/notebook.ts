@@ -14,6 +14,7 @@ import { RATE_LIMITS } from "@/lib/rate-limit";
 import { presignUpload, type PresignedUpload } from "@/lib/storage";
 import { cleanupUnusedAssets, recordAsset } from "@/server/services/assets";
 import { requirePage } from "@/server/databases/service";
+import { db } from "@/lib/db";
 
 /** Validate a save payload and store it; returns the saved entry or an error message. */
 async function saveFromPayload(payload: unknown, userId: string): Promise<SavedEntry | string> {
@@ -69,14 +70,18 @@ export async function unpublishEntryAction(entryId: string): Promise<ActionResul
 }
 
 export async function deleteEntryAction(entryId: string): Promise<ActionResult> {
+  let folderId: string | null = null;
   const result = await adminAction<undefined>(async (user) => {
-    await deleteEntry(idSchema.parse(entryId), user.id);
+    const id = idSchema.parse(entryId);
+    folderId = (await db.content.findUnique({ where: { id }, select: { folderId: true } }))?.folderId ?? null;
+    await deleteEntry(id, user.id);
     return { ok: true };
   });
   if (!result.ok) return result;
   revalidatePath("/dashboard", "layout");
   updateTag(TIMELINE_TAG);
-  redirect("/dashboard/notebook?deleted=1");
+  // Back to the folder it was in.
+  redirect(folderId ? `/dashboard/notebook?folder=${folderId}&deleted=1` : "/dashboard/notebook?deleted=1");
 }
 
 const uploadSchema = z.object({

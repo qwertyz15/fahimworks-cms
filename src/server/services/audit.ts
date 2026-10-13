@@ -20,12 +20,18 @@ export type AuditAction =
   | "content.rejected"
   | "content.unpublished"
   | "content.reopened"
+  | "folder.created"
+  | "folder.updated"
+  | "folder.moved"
+  | "folder.deleted"
+  | "folder.published"
+  | "folder.unpublished"
   | "settings.updated";
 
 interface AuditInput {
   actorId?: string | null;
   action: AuditAction;
-  targetType?: "content" | "user" | "settings";
+  targetType?: "content" | "user" | "settings" | "folder";
   targetId?: string;
   metadata?: Prisma.InputJsonValue;
   ip?: string;

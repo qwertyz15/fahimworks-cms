@@ -19,6 +19,11 @@ export function writtenPostUrl(slug: string): string {
   return `${timelineUrl()}/p/${slug}`;
 }
 
+/** Public page of a Notebook folder. */
+export function folderPageUrl(slug: string): string {
+  return `${timelineUrl()}/c/${slug}`;
+}
+
 /** Public address to link to / share. */
 export function timelineUrl(): string {
   const host = timelineHost();

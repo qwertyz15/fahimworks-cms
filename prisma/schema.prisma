@@ -154,6 +154,11 @@ model Content {
 
   authorId           String              @map("author_id")
   authorRef          User                @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  /// Notebook folder (Notebook entries only; null = top level).
+  folderId           String?             @map("folder_id")
+  folder             NotebookFolder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  /// Order inside the folder (fractional key; also the order on the public folder page).
+  folderPosition     String?             @map("folder_position")
   tags               Tag[]
   verificationTokens VerificationToken[]
   assets             Asset[]
@@ -167,6 +172,7 @@ model Content {
   @@index([publishedAt])
   @@index([contentHash])
   @@index([authorId])
+  @@index([folderId, folderPosition])
   @@map("contents")
 }
 
@@ -476,4 +482,26 @@ model PageRelation {
   @@index([toPageId])
   @@index([fromPageId])
   @@map("page_relations")
+}
+
+/// A Notebook folder. Folders nest (parentId); entries point at their folder.
+/// A public folder has a page on the timeline (/c/<slug>) listing its
+/// published entries in order, with "Part of …" and previous / next links.
+model NotebookFolder {
+  id          String           @id @default(cuid())
+  parentId    String?          @map("parent_id")
+  parent      NotebookFolder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children    NotebookFolder[] @relation("FolderTree")
+  name        String
+  icon        String?
+  description String?
+  slug        String           @unique
+  position    String
+  isPublic    Boolean          @default(false) @map("is_public")
+  entries     Content[]
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  @@index([parentId, position])
+  @@map("notebook_folders")
 }

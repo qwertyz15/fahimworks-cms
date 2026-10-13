@@ -10,6 +10,7 @@ import { transition, WorkflowError } from "./workflow";
 import { deriveFields, mediaSources, renderNotebookHtml } from "./notebook-html";
 import { cleanupUnusedAssets, linkAssets } from "./assets";
 import { storagePublicOrigin } from "@/lib/storage";
+import { generateKeyBetween } from "fractional-indexing";
 
 /**
  * Notebook: posts written in the dashboard editor (source = WRITTEN).
@@ -19,6 +20,8 @@ import { storagePublicOrigin } from "@/lib/storage";
 
 export interface SaveEntryInput {
   id?: string;
+  /** New entries only. */
+  folderId?: string | null;
   title: string;
   subtitle: string | null;
   tags: string[];
@@ -81,9 +84,18 @@ export async function saveEntry(input: SaveEntryInput, actorId: string): Promise
   } satisfies Prisma.ContentUpdateInput;
 
   if (!input.id) {
+    // Into the folder it was started from (if it still exists), at the end.
+    const folderId = input.folderId ? ((await db.notebookFolder.findUnique({ where: { id: input.folderId }, select: { id: true } }))?.id ?? null) : null;
+    const last = (await db.content.findMany({ where: { source: "WRITTEN", folderId }, select: { folderPosition: true } }))
+      .map((r) => r.folderPosition)
+      .filter((p): p is string => !!p)
+      .sort()
+      .at(-1);
     const created = await db.content.create({
       data: {
         ...data,
+        folderId,
+        folderPosition: generateKeyBetween(last ?? null, null),
         source: "WRITTEN",
         slug: await resolveSlug(input.slug, title),
         authorId: actorId,

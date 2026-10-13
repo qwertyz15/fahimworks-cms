@@ -65,6 +65,11 @@ function timelineHostResponse(req: NextRequest) {
   if (article) return withCsp(req, new URL(`/timeline/p/${article[1]}`, req.url));
   const longForm = pathname.match(/^\/timeline\/p\/([a-z0-9-]{1,120})\/?$/);
   if (longForm) return NextResponse.redirect(new URL(`/p/${longForm[1]}`, req.url), 308);
+  // Notebook folder pages: /c/<slug>.
+  const folder = pathname.match(/^\/c\/([a-z0-9-]{1,80})\/?$/);
+  if (folder) return withCsp(req, new URL(`/timeline/c/${folder[1]}`, req.url));
+  const folderLong = pathname.match(/^\/timeline\/c\/([a-z0-9-]{1,80})\/?$/);
+  if (folderLong) return NextResponse.redirect(new URL(`/c/${folderLong[1]}`, req.url), 308);
   if (pathname.startsWith("/_next/")) return withCsp(req);
   return new NextResponse("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
 }

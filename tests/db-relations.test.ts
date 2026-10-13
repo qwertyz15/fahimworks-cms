@@ -232,8 +232,10 @@ describe.skipIf(!up)("relations, rollups, formulas (Postgres)", async () => {
       const val = (title: string, n: string) => (rows.find((r) => r.title === title)!.values as Record<string, unknown>)[prop(n).id];
       return { d, rows, prop, val };
     };
+    // Sample dates are relative to the day the pack is created; formulas use the real today().
+    const realToday = new Date().toISOString().slice(0, 10);
     for (const pack of PACKS) {
-      const first = await createFromTemplate(userId, pack.key, today);
+      const first = await createFromTemplate(userId, pack.key, realToday);
       const dbs = await db.database.findMany({ where: { workspaceId, templateKey: pack.key }, orderBy: { createdAt: "desc" }, take: pack.databases.length });
       expect(dbs.length).toBe(pack.databases.length);
       expect(dbs.map((d) => d.id)).toContain(first.id);
@@ -268,7 +270,7 @@ describe.skipIf(!up)("relations, rollups, formulas (Postgres)", async () => {
     expect(suppliers.val("DeskWorks", "Stock value")).toBe(8 * 34 + 22 * 79);
 
     for (const key of ["document-hub", "engineering-docs", "knowledge-base", "brainstorm"]) {
-      const d = await createFromTemplate(userId, key, today);
+      const d = await createFromTemplate(userId, key, realToday);
       const t = TEMPLATES.find((x) => x.key === key)!;
       const { rows, d: info } = await byName(d.id);
       expect(rows.length).toBe(t.rows.length);

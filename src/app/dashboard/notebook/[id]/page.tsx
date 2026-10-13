@@ -5,6 +5,7 @@ import { EntryEditor } from "@/components/editor/entry-editor";
 import { writtenPostUrl } from "@/lib/timeline";
 import { mediaUploadLimitBytes, uploadLimitBytes, uploadsEnabled } from "@/lib/storage";
 import { getNotebookEntry } from "@/server/queries/content";
+import { listFolders } from "@/server/services/folders";
 import { deriveFields } from "@/server/services/notebook-html";
 import { sourcePageOf } from "@/server/databases/publish";
 import Link from "next/link";
@@ -54,9 +55,12 @@ export default async function EditEntryPage({ params }: PageProps<"/dashboard/no
   const auto = entry.contentHtml ? deriveFields(entry.contentHtml).autoSummary : null;
   const summary = entry.summary && entry.summary !== auto ? entry.summary : null;
 
+  const folders = await listFolders();
   return (
     <EntryEditor
       key={entry.id}
+      folders={folders}
+      folderId={entry.folderId}
       articleBaseUrl={writtenPostUrl("")}
       uploads={{ enabled: uploadsEnabled(), maxBytes: uploadLimitBytes(), maxMediaBytes: mediaUploadLimitBytes() }}
       entry={{

@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Clock } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clock, FolderOpen } from "lucide-react";
 import { TYPE_META } from "@/components/dashboard/content-types";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CodeCopy } from "@/components/timeline/code-copy";
@@ -11,6 +11,7 @@ import { MermaidBlocks } from "@/components/timeline/mermaid-blocks";
 import { cn } from "@/lib/utils";
 import { isTimelineHost, writtenPostUrl } from "@/lib/timeline";
 import { getPublishedArticle } from "@/server/queries/public";
+import { getArticleSeries } from "@/server/queries/folders-public";
 import { getSettings } from "@/server/services/settings";
 
 /** Public article page for a published Notebook entry: timeline.fahimworks.dev/p/<slug>. */
@@ -62,6 +63,8 @@ export default async function ArticlePage({ params }: PageProps<"/timeline/p/[sl
   const home = isTimelineHost(h.get("x-forwarded-host") ?? h.get("host")) ? "/" : "/timeline";
   const meta = TYPE_META[article.type];
   const published = article.publishDate ?? article.publishedAt;
+  const series = await getArticleSeries(article.id);
+  const base = home === "/" ? "" : "/timeline";
 
   return (
     <div className="page-bleed relative min-h-dvh overflow-x-clip bg-background">
@@ -90,6 +93,11 @@ export default async function ArticlePage({ params }: PageProps<"/timeline/p/[sl
               </span>
             ) : null}
           </div>
+          {series && (
+            <Link href={`${base}/c/${series.folder.slug}`} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-primary hover:underline" data-testid="part-of">
+              {series.folder.icon ?? <FolderOpen className="size-3.5" />} Part of {series.folder.name} · {series.index} of {series.total}
+            </Link>
+          )}
           <h1 className="text-4xl leading-[1.1] font-semibold tracking-tight text-balance sm:text-5xl">{article.title}</h1>
           {article.subtitle && <p className="text-xl leading-relaxed text-muted-foreground text-pretty">{article.subtitle}</p>}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t pt-5 text-sm">
@@ -114,6 +122,29 @@ export default async function ArticlePage({ params }: PageProps<"/timeline/p/[sl
         <article id="article-body" className="prose-content prose-article" dangerouslySetInnerHTML={{ __html: article.contentHtml ?? "" }} />
         <CodeCopy selector="#article-body" />
         <MermaidBlocks selector="#article-body" />
+
+        {series && (series.prev || series.next) && (
+          <nav className="mt-16 grid gap-3 sm:grid-cols-2" aria-label={`More in ${series.folder.name}`} data-testid="series-nav">
+            {series.prev ? (
+              <Link href={`${base}/p/${series.prev.slug}`} className="group rounded-2xl border bg-surface/70 p-4 transition-colors hover:bg-surface-2/70">
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <ArrowLeft className="size-3.5" /> Previous
+                </span>
+                <span className="mt-1 block font-medium group-hover:underline">{series.prev.title}</span>
+              </Link>
+            ) : (
+              <span className="hidden sm:block" />
+            )}
+            {series.next && (
+              <Link href={`${base}/p/${series.next.slug}`} className="group rounded-2xl border bg-surface/70 p-4 text-right transition-colors hover:bg-surface-2/70">
+                <span className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
+                  Next <ArrowRight className="size-3.5" />
+                </span>
+                <span className="mt-1 block font-medium group-hover:underline">{series.next.title}</span>
+              </Link>
+            )}
+          </nav>
+        )}
 
         <footer className="mt-20 flex flex-col gap-4 border-t pt-8 sm:flex-row sm:items-center sm:justify-between">
           <div>

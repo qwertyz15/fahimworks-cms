@@ -1,68 +1,39 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { NotebookPen, PenLine } from "lucide-react";
-import { StatusBadge, TypeBadge } from "@/components/content/badges";
-import { buttonVariants } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { FormAlert } from "@/components/ui/field";
-import { EmptyState, PageHeader } from "@/components/ui/misc";
-import { formatDate } from "@/lib/utils";
+import { NotebookBrowser } from "@/components/notebook/notebook-browser";
+import { folderPageUrl, writtenPostUrl } from "@/lib/timeline";
 import { listNotebook } from "@/server/queries/content";
+import { listFolders } from "@/server/services/folders";
 
 export const metadata: Metadata = { title: "Notebook" };
 
+/** The Notebook: a folder tree with its entries (folders nest; entries live in one folder or at the top). */
 export default async function NotebookPage({ searchParams }: PageProps<"/dashboard/notebook">) {
   const sp = await searchParams;
-  const entries = await listNotebook();
-  const drafts = entries.filter((e) => e.status !== "PUBLISHED").length;
-
+  const entries = await listNotebook(); // checks the session
+  const folders = await listFolders();
+  const folderId = typeof sp.folder === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(sp.folder) ? sp.folder : null;
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Notebook"
-        description={entries.length ? `${entries.length} entr${entries.length === 1 ? "y" : "ies"} · ${drafts} draft${drafts === 1 ? "" : "s"}` : "Write posts here and publish them to your timeline."}
-        actions={
-          <Link href="/dashboard/notebook/new" className={buttonVariants()}>
-            <PenLine /> New entry
-          </Link>
-        }
-      />
+    <div className="space-y-4">
       {sp.deleted && <FormAlert tone="success" message="Entry deleted." />}
-
-      <Card className="overflow-hidden">
-        {entries.length === 0 ? (
-          <EmptyState
-            icon={<NotebookPen />}
-            title="Your notebook is empty"
-            description="Start writing — a note, a post, an idea. Drafts save automatically while you write."
-            action={
-              <Link href="/dashboard/notebook/new" className={buttonVariants({ size: "sm" })}>
-                <PenLine /> Write your first entry
-              </Link>
-            }
-          />
-        ) : (
-          <ul className="divide-y">
-            {entries.map((e) => (
-              <li key={e.id}>
-                <Link href={`/dashboard/notebook/${e.id}`} className="flex items-start gap-4 px-5 py-4 transition-colors hover:bg-surface-2/60">
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <p className="truncate font-medium">{e.title}</p>
-                    {(e.subtitle ?? e.summary) && <p className="line-clamp-1 text-[13px] text-muted-foreground">{e.subtitle ?? e.summary}</p>}
-                    <p className="text-xs text-muted-foreground">
-                      Edited {formatDate(e.updatedAt)} · {(e.wordCount ?? 0).toLocaleString()} words
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1.5 sm:flex-row sm:items-center">
-                    <TypeBadge type={e.type} />
-                    <StatusBadge status={e.status} />
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <NotebookBrowser
+        folders={folders}
+        entries={entries.map((e) => ({
+          id: e.id,
+          title: e.title,
+          subtitle: e.subtitle,
+          summary: e.summary,
+          status: e.status,
+          slug: e.slug,
+          wordCount: e.wordCount,
+          updatedAt: e.updatedAt.toISOString(),
+          folderId: e.folderId,
+          folderPosition: e.folderPosition,
+        }))}
+        initialFolderId={folderId}
+        articleBase={writtenPostUrl("")}
+        folderPageBase={folderPageUrl("")}
+      />
     </div>
   );
 }

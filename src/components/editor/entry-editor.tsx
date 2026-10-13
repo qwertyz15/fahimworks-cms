@@ -1,10 +1,14 @@
 "use client";
 
 import { ExportMenu } from "@/components/export/export-menu";
+import { MoveDialog } from "@/components/notebook/dialogs";
+import type { FolderItem } from "@/components/notebook/types";
+import { pathOf } from "@/lib/notebook-folders";
+import { moveEntriesAction } from "@/server/actions/folders";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { JSONContent } from "@tiptap/react";
-import { AlertCircle, ArrowLeft, ArrowUpRight, Check, EyeOff, ImagePlus, Loader2, Send, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowUpRight, Check, ChevronRight, EyeOff, FolderInput, ImagePlus, Loader2, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { deleteEntryAction, publishEntryAction, saveEntryAction, unpublishEntryAction } from "@/server/actions/notebook";
 import type { SavedEntry } from "@/server/services/notebook";
@@ -42,8 +46,24 @@ const AUTOSAVE_MS = 10_000;
 const timeFmt = new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit" });
 
 /** `articleBaseUrl`: public address prefix for published entries, e.g. https://timeline.fahimworks.dev/p/ */
-export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: EditableEntry | null; articleBaseUrl: string; uploads: EditorUploadConfig }) {
+export function EntryEditor({
+  entry,
+  articleBaseUrl,
+  uploads,
+  folders = [],
+  folderId: initialFolderId = null,
+}: {
+  entry: EditableEntry | null;
+  articleBaseUrl: string;
+  uploads: EditorUploadConfig;
+  /** Notebook folders (breadcrumb, "Move to…"). */
+  folders?: FolderItem[];
+  /** The entry's folder (a new entry is created in it). */
+  folderId?: string | null;
+}) {
   const [id, setId] = useState(entry?.id);
+  const [folderId, setFolderId] = useState<string | null>(initialFolderId);
+  const [moving, setMoving] = useState(false);
   const [status, setStatus] = useState(entry?.status ?? "DRAFT");
   const [title, setTitle] = useState(entry && entry.title !== "Untitled" ? entry.title : "");
   const [subtitle, setSubtitle] = useState(entry?.subtitle ?? "");
@@ -89,9 +109,9 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
   const { editor, words, uploading } = rich;
 
   // Latest form values for the save function (avoids stale closures).
-  const values = useRef({ id, title, subtitle, tags, slug, summary, featured, coverImage });
+  const values = useRef({ id, title, subtitle, tags, slug, summary, featured, coverImage, folderId });
   useLayoutEffect(() => {
-    values.current = { id, title, subtitle, tags, slug, summary, featured, coverImage };
+    values.current = { id, title, subtitle, tags, slug, summary, featured, coverImage, folderId };
   });
 
   type Values = typeof values.current;
@@ -101,6 +121,8 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
       if (!editor) throw new Error("Editor not ready");
       return {
         id: v.id,
+        // Only used when the entry is created; afterwards moving is its own action.
+        folderId: v.id ? undefined : v.folderId,
         title: v.title,
         subtitle: v.subtitle,
         tags: v.tags,
@@ -268,9 +290,39 @@ export function EntryEditor({ entry, articleBaseUrl, uploads }: { entry: Editabl
     <div className="-mx-4 -mt-6 sm:-mx-6 lg:-mx-8 lg:-mt-8">
       {/* Top bar */}
       <div className="sticky top-14 z-20 flex flex-wrap items-center gap-3 border-b bg-background/85 px-4 py-2.5 backdrop-blur sm:px-6 lg:top-0 lg:px-8">
-        <Link href="/dashboard/notebook" className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-3.5" /> Notebook
-        </Link>
+        <nav aria-label="Folder" className="flex min-w-0 items-center gap-1 text-[13px] text-muted-foreground" data-testid="entry-breadcrumb">
+          <Link href="/dashboard/notebook" className="hover:text-foreground">
+            Notebook
+          </Link>
+          {pathOf(folders, folderId).map((f) => (
+            <span key={f.id} className="flex min-w-0 items-center gap-1">
+              <ChevronRight className="size-3 shrink-0" />
+              <Link href={`/dashboard/notebook?folder=${f.id}`} className="truncate hover:text-foreground">
+                {f.icon ? `${f.icon} ` : ""}
+                {f.name}
+              </Link>
+            </span>
+          ))}
+          <button type="button" onClick={() => setMoving(true)} aria-label="Move to another folder" title="Move to another folder" className="ml-0.5 rounded p-0.5 hover:bg-muted hover:text-foreground">
+            <FolderInput className="size-3.5" />
+          </button>
+        </nav>
+        {moving && (
+          <MoveDialog
+            folders={folders}
+            title="Move this entry"
+            current={folderId}
+            onClose={() => setMoving(false)}
+            onMove={async (to) => {
+              // Not created yet: it's simply created there.
+              if (!values.current.id) return setFolderId(to);
+              const r = await moveEntriesAction({ ids: [values.current.id], folderId: to });
+              if (!r.ok) return void toast.error(r.error);
+              setFolderId(to);
+              toast.success(`Moved to ${to ? (folders.find((f) => f.id === to)?.name ?? "folder") : "Notebook"}.`);
+            }}
+          />
+        )}
         <Badge tone={published ? "green" : "neutral"} dot>
           {published ? "Published" : "Draft"}
         </Badge>

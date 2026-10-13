@@ -194,8 +194,8 @@ export async function listNotebook() {
   return db.content.findMany({
     where: { source: "WRITTEN" },
     orderBy: { updatedAt: "desc" },
-    take: 500,
-    select: { id: true, title: true, subtitle: true, type: true, status: true, wordCount: true, readingMinutes: true, summary: true, updatedAt: true, publishedAt: true },
+    take: 2000,
+    select: { id: true, title: true, subtitle: true, type: true, status: true, wordCount: true, readingMinutes: true, summary: true, updatedAt: true, publishedAt: true, slug: true, folderId: true, folderPosition: true },
   });
 }
 
@@ -221,6 +221,7 @@ export async function getNotebookEntry(id: string) {
       updatedAt: true,
       publishedAt: true,
       tags: { select: { name: true }, orderBy: { name: "asc" } },
+      folderId: true,
     },
   });
 }
